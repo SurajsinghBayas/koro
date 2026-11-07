@@ -86,7 +86,10 @@ export const native = {
 
   /** What any app is playing (Spotify, YT Music…). Album art only when `artKey` differs from the current track. */
   media: (artKey?: string) => (isNative ? tryCall<NowPlaying | null>('media', { artKey: artKey ?? '' }, null) : Promise.resolve(mockMedia(artKey))),
-  mediaControl: (action: 'toggle' | 'play' | 'pause' | 'next' | 'prev' | 'seek', pos = 0) => tryCall('mediaControl', { action, pos }, null),
+  mediaControl: (action: 'toggle' | 'play' | 'pause' | 'next' | 'prev' | 'seek', pos = 0) => {
+    if (!isNative) { if (action === 'toggle') __mockToggle(); else mockStart = Date.now(); return Promise.resolve(null); }
+    return tryCall('mediaControl', { action, pos }, null);
+  },
 
   /** Initialise Firebase with the server-provided config and return the FCM token. */
   pushInit: (cfg: { appId: string; apiKey: string; senderId: string; projectId: string }) =>
@@ -97,7 +100,11 @@ export const native = {
 let mockStart = Date.now();
 let mockPlaying = true;
 function mockMedia(artKey?: string): NowPlaying | null {
-  try { if (localStorage.getItem('koroMockMedia') !== '1') return null; } catch { return null; }
+  try {
+    if (/[?&]music\b/.test(location.search)) localStorage.setItem('koroMockMedia', '1');      // open with ?music to preview
+    if (/[?&]nomusic\b/.test(location.search)) localStorage.removeItem('koroMockMedia');
+    if (localStorage.getItem('koroMockMedia') !== '1') return null;
+  } catch { return null; }
   const key = 'mock|Kesariya';
   const art = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff7a59"/><stop offset=".5" stop-color="#c2185b"/><stop offset="1" stop-color="#311b92"/></linearGradient></defs><rect width="100" height="100" fill="url(#g)"/><circle cx="50" cy="50" r="22" fill="none" stroke="#ffd166" stroke-width="3"/></svg>')}`;
   return { access: true, active: true, title: 'Kesariya', artist: 'Arijit Singh', album: 'Brahmastra', app: 'Spotify', package: 'com.spotify.music',

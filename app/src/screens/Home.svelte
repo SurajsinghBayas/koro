@@ -17,7 +17,8 @@
 
   let text = $state('');
   let busy = $state(false);
-  let newsCat = $state<'tech' | 'india' | 'world' | 'cricket'>('tech');
+  let newsCat = $state<'world' | 'india' | 'ai' | 'startups'>('world');
+  const NEWS_NAMES = { world: 'World', india: 'India', ai: 'AI & Tech', startups: 'AI Startups' } as const;
   let now = $state(Date.now());
 
   // one ticker for the whole screen: 1 s only while a timer is running, else once a minute
@@ -187,8 +188,8 @@
     <section class="card">
       <div class="card__title"><h3>Headlines</h3><button class="label linkish" onclick={() => (app.tab = 'news')}>More ›</button></div>
       <div class="chips">
-        {#each ['tech', 'india', 'world', 'cricket'] as const as c}
-          <button class="chip" aria-pressed={newsCat === c} onclick={() => (newsCat = c)}>{c[0]!.toUpperCase() + c.slice(1)}</button>
+        {#each ['world', 'india', 'ai', 'startups'] as const as c}
+          <button class="chip" aria-pressed={newsCat === c} onclick={() => (newsCat = c)}>{NEWS_NAMES[c]}</button>
         {/each}
       </div>
       <div class="mt-2">

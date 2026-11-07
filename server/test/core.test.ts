@@ -107,9 +107,9 @@ describe('providers map', () => {
 describe('news', () => {
   test('rss + atom', () => {
     const rss = `<rss><channel><item><title><![CDATA[Hello &amp; world]]></title><link>https://a.com/1</link><pubDate>Sat, 07 Nov 2026 10:00:00 GMT</pubDate></item></channel></rss>`;
-    expect(parseFeed(rss, 'tech', 'A')[0]).toMatchObject({ title: 'Hello & world', url: 'https://a.com/1' });
+    expect(parseFeed(rss, 'ai', 'A')[0]).toMatchObject({ title: 'Hello & world', url: 'https://a.com/1' });
     const atom = `<feed><entry><title>T</title><link rel="alternate" href="https://b.com/2"/><published>2026-11-07T10:00:00Z</published></entry></feed>`;
-    expect(parseFeed(atom, 'tech', 'B')[0]).toMatchObject({ url: 'https://b.com/2' });
+    expect(parseFeed(atom, 'ai', 'B')[0]).toMatchObject({ url: 'https://b.com/2' });
   });
 });
 

@@ -23,6 +23,9 @@ export type Match = {
 };
 export type NewsItem = { id: string; title: string; url: string; source: string; publishedAt: string; cat: string; desc?: string; image?: string };
 export type Story = { title: string; summary: string; url: string; image?: string; publishedAt: string; sources: { source: string; url: string }[] };
+export type XMedia = { type: 'photo' | 'video'; url: string; poster?: string };
+export type XPost = { id: string; author: string; text: string; url: string; createdAt: string; likes: number; retweets: number; replies: number; views: number; media: XMedia[]; quoted?: { author: string; text: string } };
+export type XData = { at: string | null; digest: { at: string; lines: string[] } | null; feed: XPost[]; cricket: XPost[] };
 export type TableRow = { team: string; short?: string; img?: string; p: number; w: number; l: number; nr: number; pts: number };
 export type MatchesFull = {
   live: Match[]; upcoming: Match[]; recent: Match[];
@@ -34,7 +37,8 @@ export type DeviceRow = { id: string; name: string; kind: string; battery_pct: n
 export type Home = {
   brief: { text: string; at: string } | null;
   matches: { live: Match[]; upcoming: Match[]; recent: Match[] };
-  news: Record<'tech' | 'india' | 'world' | 'cricket', NewsItem[]> & { updatedAt: string | null; digest?: Partial<Record<string, Story[]>> };
+  news: Record<'world' | 'india' | 'ai' | 'startups' | 'cricket', NewsItem[]> & { updatedAt: string | null; digest?: Partial<Record<string, Story[]>> };
+  x?: XData;
   devices: DeviceRow[];
   inbox: { id: number; kind: string; title: string; body: string; created_at: string }[];
   features: { ai: boolean; push: boolean; cricketDetail: boolean; sportmonks: boolean };
@@ -62,6 +66,7 @@ export const app = $state({
   news: {} as Record<string, NewsItem[]>,
   digest: {} as Record<string, { at: string; stories: Story[] } | null>,
   media: null as null | (NowPlaying & { at: number }),
+  x: null as null | XData,
   focus: { endsAt: 0 },
   sleep: { endsAt: 0 },
   screenTime: null as number | null,
@@ -334,6 +339,14 @@ export async function loadNews(cat: string) {
   try {
     const r = await request<{ items: NewsItem[]; digest: { at: string; stories: Story[] } | null }>(app.cfg.server, `/v1/news?cat=${cat}`, { token: app.cfg.token });
     if (r.data) { app.news[cat] = r.data.items; app.digest[cat] = r.data.digest; }
+  } catch (e) { handleError(e); }
+}
+
+export async function loadX() {
+  if (!paired()) return;
+  try {
+    const r = await request<XData>(app.cfg.server, '/v1/x', { token: app.cfg.token });
+    if (r.data) app.x = r.data;
   } catch (e) { handleError(e); }
 }
 

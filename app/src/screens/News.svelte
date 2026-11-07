@@ -1,16 +1,19 @@
 <script lang="ts">
   import Icon from '../components/Icon.svelte';
   import { openUrl } from '../lib/open.ts';
-  import { app, loadNews, type Story } from '../lib/store.svelte.ts';
+  import XPostView from '../components/XPost.svelte';
+  import { app, loadNews, loadX, type Story } from '../lib/store.svelte.ts';
   import { ago } from '../lib/util.ts';
 
-  const CATS = ['tech', 'india', 'world', 'cricket'] as const;
-  const NAMES = { tech: 'Tech', india: 'India', world: 'World', cricket: 'Cricket' };
-  let cat = $state<(typeof CATS)[number]>('tech');
-  $effect(() => { void loadNews(cat); });
+  const CATS = ['world', 'india', 'ai', 'startups', 'feed'] as const;
+  const NAMES = { world: 'World', india: 'India', ai: 'AI & Tech', startups: 'AI Startups', feed: 'My feed' };
+  type Cat = (typeof CATS)[number];
+  let cat = $state<Cat>('world');
+  $effect(() => { if (cat === 'feed') void loadX(); else void loadNews(cat); });
 
-  const items = $derived(app.news[cat] ?? app.home?.news[cat] ?? []);
-  const stories = $derived<Story[]>(app.digest[cat]?.stories ?? app.home?.news.digest?.[cat] ?? []);
+  const items = $derived(cat === 'feed' ? [] : (app.news[cat] ?? app.home?.news[cat] ?? []));
+  const stories = $derived<Story[]>(cat === 'feed' ? [] : (app.digest[cat]?.stories ?? app.home?.news.digest?.[cat] ?? []));
+  const x = $derived(app.x ?? app.home?.x ?? null);
   // headlines already covered by a top story aren't repeated below
   const covered = $derived(new Set(stories.flatMap((s) => s.sources.map((x) => x.url))));
   const latest = $derived(items.filter((n) => !covered.has(n.url)));
@@ -24,6 +27,22 @@
     {#each CATS as c}<button class="chip" aria-pressed={cat === c} onclick={() => (cat = c)}>{NAMES[c]}</button>{/each}
   </div>
 
+  {#if cat === 'feed'}
+    {#if x?.digest?.lines.length}
+      <section class="card">
+        <div class="card__title"><h3>What your people are saying</h3><span class="label ai"><Icon name="sparkle" size={12} /> AI</span></div>
+        <ul class="digest">{#each x.digest.lines as l}<li>{l}</li>{/each}</ul>
+      </section>
+    {/if}
+    <div class="label row-label">Top posts from people you follow{#if x?.at}&nbsp;· {ago(x.at)}{/if}</div>
+    <section class="card">
+      {#each x?.feed ?? [] as p (p.id)}
+        <XPostView {p} />
+      {:else}
+        <p class="muted">Nothing yet. Your Mac collects these from X: run <code>agent-reach login twitter</code> once, then <code>sh mac-companion/koro-mac.sh x --force</code>.</p>
+      {/each}
+    </section>
+  {:else}
   {#if stories.length}
     <div class="label row-label"><Icon name="sparkle" size={12} /> Top stories · summarised by AI</div>
     {@const lead = stories[0]!}
@@ -64,11 +83,15 @@
       <p class="muted">No headlines yet.</p>
     {/each}
   </section>
+  {/if}
 </main>
 
 <style>
   .row-label { display: flex; gap: 6px; align-items: center; margin-bottom: -4px; }
   .row-label :global(svg) { color: var(--gold-text); }
+  .ai { display: inline-flex; gap: 4px; align-items: center; color: var(--gold-text); }
+  .digest { margin: 0; padding-left: 18px; display: grid; gap: 6px; line-height: 1.45; color: var(--text-2); }
+  code { font-size: .9em; background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
   .meta { font-size: var(--fs-xs); color: var(--text-3); }
   .src { font-weight: 650; color: var(--accent-text); }
 

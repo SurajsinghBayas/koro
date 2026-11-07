@@ -22,9 +22,9 @@ describe('match history', () => {
 
 describe('news digest', () => {
   const items: NewsItem[] = [
-    { id: 'a', title: 'Chip maker beats estimates', url: 'https://a', source: 'The Verge', publishedAt: '2026-11-08T01:00:00Z', cat: 'tech' },
-    { id: 'b', title: 'Chip maker posts record quarter', url: 'https://b', source: 'TechCrunch', publishedAt: '2026-11-08T02:00:00Z', cat: 'tech', image: 'https://img/b.jpg' },
-    { id: 'c', title: 'New phone launched', url: 'https://c', source: 'The Verge', publishedAt: '2026-11-08T00:00:00Z', cat: 'tech' },
+    { id: 'a', title: 'Chip maker beats estimates', url: 'https://a', source: 'The Verge', publishedAt: '2026-11-08T01:00:00Z', cat: 'ai' },
+    { id: 'b', title: 'Chip maker posts record quarter', url: 'https://b', source: 'TechCrunch', publishedAt: '2026-11-08T02:00:00Z', cat: 'ai', image: 'https://img/b.jpg' },
+    { id: 'c', title: 'New phone launched', url: 'https://c', source: 'The Verge', publishedAt: '2026-11-08T00:00:00Z', cat: 'ai' },
   ];
   test('merges duplicates, keeps image and every source, ignores bad indexes', () => {
     const s = storiesFromAi([
@@ -43,9 +43,33 @@ describe('news digest', () => {
       <description><![CDATA[<p>Short <b>summary</b> here.</p>]]></description>
       <media:content url="https://img/1.jpg" medium="image"/></item>
       <item><title>Insecure</title><link>https://x/2</link><enclosure url="http://img/2.jpg" type="image/jpeg"/></item></channel></rss>`;
-    const [a, b] = parseFeed(xml, 'tech', 'Test');
+    const [a, b] = parseFeed(xml, 'ai', 'Test');
     expect(a!.desc).toBe('Short summary here.');
     expect(a!.image).toBe('https://img/1.jpg');
     expect(b!.image).toBeUndefined();
+  });
+});
+
+import { normalize, score } from '../src/services/x.ts';
+describe('x posts', () => {
+  test('normalises an OpenCLI row with photo and video', () => {
+    const p = normalize({ id: '1987', author: 'mufaddal_vohra', text: 'Rohit 100* 🔥 https://t.co/abc', likes: 5200, retweets: '410', replies: 88, views: 120000,
+      created_at: 'Sat Nov 07 10:00:00 +0000 2026', url: 'https://x.com/mufaddal_vohra/status/1987',
+      media_urls: ['https://pbs.twimg.com/media/a.jpg', 'https://video.twimg.com/ext_tw_video/1/pu/vid/720x1280/b.mp4?tag=12'],
+      media_posters: ['https://pbs.twimg.com/ext_tw_video_thumb/1/pu/img/b.jpg'] })!;
+    expect(p.text).toBe('Rohit 100* 🔥');
+    expect(p.retweets).toBe(410);
+    expect(p.media.map((m) => m.type)).toEqual(['photo', 'video']);
+    expect(p.media[1]!.poster).toContain('thumb');
+    expect(p.createdAt).toBe('2026-11-07T10:00:00.000Z');
+  });
+  test('rejects rows without a numeric id or author, drops http media', () => {
+    expect(normalize({ id: 'abc', author: 'x' })).toBeNull();
+    expect(normalize({ id: '1', author: 'a', media_urls: ['http://insecure/a.jpg'] })!.media).toEqual([]);
+  });
+  test('engagement score decays with age', () => {
+    const now = Date.parse('2026-11-08T00:00:00Z');
+    const base = { id: '1', author: 'a', text: '', url: '', likes: 1000, retweets: 0, replies: 0, views: 0, media: [] };
+    expect(score({ ...base, createdAt: '2026-11-07T23:00:00Z' }, now)).toBeGreaterThan(score({ ...base, createdAt: '2026-11-06T00:00:00Z' }, now));
   });
 });

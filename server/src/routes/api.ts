@@ -8,6 +8,7 @@ import { aiParse, getBrief, maybeRefreshBrief } from '../services/ai.ts';
 import { getMatches } from '../services/cricket/engine.ts';
 import { getNews, type NewsCat } from '../services/news.ts';
 import { notify, pushEnabled } from '../services/push.ts';
+import { CRICKET_HANDLES, getX, ingest } from '../services/x.ts';
 
 type Env = { Variables: { device: Device } };
 
@@ -18,7 +19,7 @@ export function apiRoutes(db: Db) {
     const m = getMatches();
     return {
       matches: [...m.live.map((x) => `${x.summary.title}: ${x.summary.body}`), ...m.upcoming.slice(0, 2).map((x) => `${x.name} at ${x.startsAt}`)],
-      headlines: [...getNews().items.india.slice(0, 3), ...getNews().items.tech.slice(0, 3)].map((n) => n.title),
+      headlines: [...getNews().items.india.slice(0, 2), ...getNews().items.world.slice(0, 2), ...getNews().items.ai.slice(0, 2)].map((n) => n.title),
     };
   };
 
@@ -35,12 +36,13 @@ export function apiRoutes(db: Db) {
       brief: getBrief(),
       matches: { live: matches.live, upcoming: matches.upcoming.slice(0, 3), recent: matches.recent.slice(0, 2).map(({ innings, ...m }) => ({ ...m, innings })) },
       news: {
-        tech: news.items.tech.slice(0, 6), india: news.items.india.slice(0, 6),
-        world: news.items.world.slice(0, 4), cricket: news.items.cricket.slice(0, 4), updatedAt: news.updatedAt,
+        world: news.items.world.slice(0, 4), india: news.items.india.slice(0, 4), ai: news.items.ai.slice(0, 4),
+        startups: news.items.startups.slice(0, 4), cricket: news.items.cricket.slice(0, 4), updatedAt: news.updatedAt,
         digest: Object.fromEntries(Object.entries(news.digest ?? {}).map(([k, d]) => [k, d!.stories.slice(0, 3)])),
       },
       devices,
       inbox,
+      x: (() => { const x = getX(); return { at: x.at, digest: x.digest, feed: x.feed.slice(0, 3), cricket: x.cricket.slice(0, 3) }; })(),
       features: { ai: aiEnabled(), push: pushEnabled(), cricketDetail: Boolean(env.CRICKETDATA_API_KEY), sportmonks: Boolean(env.SPORTMONKS_API_TOKEN) },
     };
     const json = JSON.stringify(body, (k, v) => (k === 'now' ? undefined : v));
@@ -52,8 +54,19 @@ export function apiRoutes(db: Db) {
 
   r.get('/matches', (c) => c.json(getMatches()));
 
+  // ---- X (collected on the Mac by Agent-Reach, see mac-companion/koro-x.py) ----
+  r.get('/x', (c) => { const x = getX(); return c.json({ at: x.at, digest: x.digest, feed: x.feed.slice(0, 40), cricket: x.cricket.slice(0, 50) }); });
+  r.get('/x/config', (c) => c.json({ cricket: CRICKET_HANDLES, feedTop: 25, feedScan: 120, cricketPerHandle: 15 }));
+  r.post('/x/ingest', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== 'object') return c.json({ error: 'JSON body required' }, 400);
+    const b = body as { feed?: unknown; cricket?: unknown };
+    if ((b.feed && !Array.isArray(b.feed)) || (b.cricket && !Array.isArray(b.cricket))) return c.json({ error: 'feed and cricket must be arrays' }, 400);
+    return c.json({ ok: true, ...ingest({ feed: (b.feed as unknown[] | undefined)?.slice(0, 300), cricket: (b.cricket as unknown[] | undefined)?.slice(0, 300) }) });
+  });
+
   r.get('/news', (c) => {
-    const cat = (c.req.query('cat') ?? 'tech') as NewsCat;
+    const cat = (c.req.query('cat') ?? 'world') as NewsCat;
     const n = getNews();
     return c.json({ cat, items: n.items[cat] ?? [], digest: n.digest?.[cat] ?? null, updatedAt: n.updatedAt });
   });

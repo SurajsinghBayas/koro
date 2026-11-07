@@ -1,16 +1,17 @@
 <script lang="ts">
   import Icon from '../components/Icon.svelte';
   import MatchRow from '../components/MatchRow.svelte';
-  import { app, loadMatches, type Match } from '../lib/store.svelte.ts';
-  import { fmtDay } from '../lib/util.ts';
+  import XPostView from '../components/XPost.svelte';
+  import { app, loadMatches, loadX, type Match } from '../lib/store.svelte.ts';
+  import { ago, fmtDay } from '../lib/util.ts';
 
   // Poll only while this screen is visible: every 30 s during a live match, else every 5 min.
   $effect(() => {
-    void loadMatches();
+    void loadMatches(); void loadX();
     let t: ReturnType<typeof setTimeout>;
     const loop = () => {
       const liveNow = (app.matchesFull?.live.length ?? 0) > 0;
-      t = setTimeout(async () => { if (!document.hidden) await loadMatches(); loop(); }, liveNow ? 30_000 : 300_000);
+      t = setTimeout(async () => { if (!document.hidden) await Promise.all([loadMatches(), loadX()]); loop(); }, liveNow ? 30_000 : 300_000);
     };
     loop();
     return () => clearTimeout(t);
@@ -26,6 +27,8 @@
   const story = $derived(app.matchesFull?.story);
   const form = $derived(app.matchesFull?.form);
   const table = $derived(app.matchesFull?.tables?.[0]);
+  const buzz = $derived((app.x ?? app.home?.x)?.cricket ?? []);
+  let buzzAll = $state(false);
 
   const short = (x: Match, t: string) => { const i = x.teams.indexOf(t); return (i >= 0 && x.short?.[i]) || t; };
   const ours = (t?: string) => !!t && (/^india$/i.test(t) || /mumbai indians/i.test(t));
@@ -73,6 +76,14 @@
           </div>
           <p>{story.mi}</p>
         {/if}
+      </section>
+    {/if}
+
+    {#if buzz.length}
+      <section class="card">
+        <div class="card__title"><h3>Cricket buzz</h3><span class="label">from X · {ago(buzz[0]!.createdAt)}</span></div>
+        {#each buzz.slice(0, buzzAll ? 30 : 4) as p (p.id)}<XPostView {p} />{/each}
+        {#if buzz.length > 4}<button class="label linkish more" onclick={() => (buzzAll = !buzzAll)}>{buzzAll ? 'Show less' : `Show ${Math.min(buzz.length, 30) - 4} more`}</button>{/if}
       </section>
     {/if}
 
@@ -140,6 +151,7 @@
 </main>
 
 <style>
+  .more { display: block; margin: var(--s3) auto 0; color: var(--accent-text); }
   .summary { font-size: var(--fs-sm); color: var(--text-2); margin-top: -4px; padding-bottom: var(--s2); }
   .ai { display: inline-flex; gap: 4px; align-items: center; color: var(--gold-text); }
   .story p { color: var(--text-2); line-height: 1.5; margin: 4px 0 var(--s3); }

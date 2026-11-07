@@ -4,25 +4,34 @@ import { fetchText } from '../lib/http.ts';
 import { chatJson } from './ai.ts';
 import { loadSnapshot, saveSnapshot } from '../lib/snapshot.ts';
 
-export type NewsCat = 'tech' | 'india' | 'world' | 'cricket';
+export type NewsCat = 'world' | 'india' | 'ai' | 'startups' | 'cricket';
 export type NewsItem = { id: string; title: string; url: string; source: string; publishedAt: string; cat: NewsCat; desc?: string; image?: string };
 /** AI digest: duplicate headlines merged into one story with a one-line summary. */
 export type Story = { title: string; summary: string; url: string; image?: string; publishedAt: string; sources: { source: string; url: string }[] };
 export type Digest = { at: string; stories: Story[] };
 
 export const FEEDS: { cat: NewsCat; source: string; url: string }[] = [
-  { cat: 'tech', source: 'The Verge', url: 'https://www.theverge.com/rss/index.xml' },
-  { cat: 'tech', source: 'TechCrunch', url: 'https://techcrunch.com/feed/' },
-  { cat: 'tech', source: 'Hacker News', url: 'https://news.ycombinator.com/rss' },
+  { cat: 'world', source: 'BBC', url: 'https://feeds.bbci.co.uk/news/world/rss.xml' },
+  { cat: 'world', source: 'The Guardian', url: 'https://www.theguardian.com/world/rss' },
+  { cat: 'world', source: 'Al Jazeera', url: 'https://www.aljazeera.com/xml/rss/all.xml' },
   { cat: 'india', source: 'The Hindu', url: 'https://www.thehindu.com/news/national/feeder/default.rss' },
   { cat: 'india', source: 'Indian Express', url: 'https://indianexpress.com/section/india/feed/' },
   { cat: 'india', source: 'Times of India', url: 'https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms' },
-  { cat: 'world', source: 'BBC', url: 'https://feeds.bbci.co.uk/news/world/rss.xml' },
-  { cat: 'world', source: 'Al Jazeera', url: 'https://www.aljazeera.com/xml/rss/all.xml' },
+  { cat: 'ai', source: 'The Verge', url: 'https://www.theverge.com/rss/ai-artificial-intelligence/index.xml' },
+  { cat: 'ai', source: 'TechCrunch', url: 'https://techcrunch.com/category/artificial-intelligence/feed/' },
+  { cat: 'ai', source: 'Ars Technica', url: 'https://arstechnica.com/ai/feed/' },
+  { cat: 'ai', source: 'The Decoder', url: 'https://the-decoder.com/feed/' },
+  { cat: 'ai', source: 'VentureBeat', url: 'https://venturebeat.com/category/ai/feed/' },
+  { cat: 'ai', source: 'MIT Tech Review', url: 'https://www.technologyreview.com/topic/artificial-intelligence/feed' },
+  { cat: 'startups', source: 'TechCrunch', url: 'https://techcrunch.com/category/startups/feed/' },
+  { cat: 'startups', source: 'TechCrunch Venture', url: 'https://techcrunch.com/category/venture/feed/' },
+  { cat: 'startups', source: 'Crunchbase News', url: 'https://news.crunchbase.com/feed/' },
+  { cat: 'startups', source: 'Inc42', url: 'https://inc42.com/feed/' },
+  { cat: 'startups', source: 'YourStory', url: 'https://yourstory.com/feed' },
   { cat: 'cricket', source: 'ESPNcricinfo', url: 'https://www.espncricinfo.com/rss/content/story/feeds/0.xml' },
 ];
 
-const PER_CAT = 30;
+const PER_CAT = 40;
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@', textNodeName: '#text', trimValues: true });
 
 const text = (v: any): string => {
@@ -81,9 +90,10 @@ export function parseFeed(xml: string, cat: NewsCat, source: string): NewsItem[]
 }
 
 type NewsState = { items: Record<NewsCat, NewsItem[]>; updatedAt: string | null; errors: Record<string, string>; digest?: Partial<Record<NewsCat, Digest>> };
-const empty = (): NewsState => ({ items: { tech: [], india: [], world: [], cricket: [] }, updatedAt: null, errors: {}, digest: {} });
+const empty = (): NewsState => ({ items: { world: [], india: [], ai: [], startups: [], cricket: [] }, updatedAt: null, errors: {}, digest: {} });
 let state: NewsState = loadSnapshot<NewsState>('news', empty());
-state.digest ??= {};
+state.items = { ...empty().items, ...Object.fromEntries(Object.entries(state.items).filter(([k]) => k in empty().items)) } as NewsState['items'];
+state.digest = Object.fromEntries(Object.entries(state.digest ?? {}).filter(([k]) => k in empty().items));
 
 export const getNews = () => state;
 
@@ -125,9 +135,10 @@ export async function refreshNews() {
 // ---------- AI digest ----------
 const DIGEST_EVERY = 90 * 60_000;
 const FOCUS: Record<NewsCat, string> = {
-  tech: 'technology, AI, gadgets, startups and the software industry',
+  world: 'the biggest world news of the day that matters to a reader in India',
   india: 'India: national news, policy, economy and big state stories',
-  world: 'world news that matters to a reader in India',
+  ai: 'AI: model and product launches, research breakthroughs, big-tech AI moves, regulation. Skip general gadget news',
+  startups: 'AI startups: funding rounds, launches, acquisitions, IPOs and notable founders, global and Indian. Prefer AI companies; skip non-startup stories',
   cricket: 'cricket, with priority to the Indian team, Rohit Sharma and Mumbai Indians',
 };
 let digesting = false;

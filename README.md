@@ -61,12 +61,13 @@ mac-companion/koro-mac.sh install     # launchd, every 10 min
 1. **Neon:** create a project in `aws-ap-southeast-1` (Singapore; Neon has no Mumbai region). Copy the **pooled** connection string.
 2. **EC2:** launch a `t4g.small` (ARM, Amazon Linux 2023) in `ap-southeast-1`. Open ports 80 and 443. Then:
    ```sh
-   scp -r server shared ec2-user@<ip>:~/koro/
+   # COPYFILE_DISABLE stops macOS adding ._* files (they would be run as migrations)
+   COPYFILE_DISABLE=1 tar czf - --exclude=server/node_modules --exclude=server/data --exclude='server/.env*' server shared | ssh ec2-user@<ip> 'mkdir -p ~/koro && cd ~/koro && tar xzf -'
    scp server/.env ec2-user@<ip>:~/koro/server/.env
    ssh ec2-user@<ip> 'bash ~/koro/server/deploy/ec2-setup.sh'
    ```
 3. On EC2, edit `~/koro/server/.env` and set `DATABASE_URL=<neon pooled url>`. The AI keys and `SETUP_CODE` came across with the file.
-4. Log out and back in, then from `~/koro` run `DOMAIN=api.<elastic-ip-with-dashes>.sslip.io docker compose -f server/deploy/docker-compose.yml up -d --build`. You can use your own domain instead. Caddy gets HTTPS automatically.
+4. Log out and back in, then from `~/koro` run `echo DOMAIN=<domain> > server/deploy/.env` once and `docker compose -f server/deploy/docker-compose.yml up -d --build`. Example domain: `DOMAIN=api.<elastic-ip-with-dashes>.sslip.io docker compose -f server/deploy/docker-compose.yml up -d --build`. You can use your own domain instead. Caddy gets HTTPS automatically.
 5. In the app, open Settings → Unpair, then pair again with `https://<domain>`.
 
 ## Optional keys (`server/.env`)

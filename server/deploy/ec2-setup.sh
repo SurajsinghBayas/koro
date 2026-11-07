@@ -10,6 +10,12 @@ if command -v dnf >/dev/null; then
   sudo curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${ARCH}" \
     -o /usr/local/lib/docker/cli-plugins/docker-compose
   sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+  # compose build needs buildx >= 0.17; Amazon Linux's docker package doesn't ship it
+  BX=$(curl -fsSL https://api.github.com/repos/docker/buildx/releases/latest | grep -o '"tag_name": *"[^"]*' | cut -d'"' -f4)
+  BXARCH=amd64; [ "$(uname -m)" = "aarch64" ] && BXARCH=arm64
+  sudo curl -fsSL "https://github.com/docker/buildx/releases/download/${BX}/buildx-${BX}.linux-${BXARCH}" \
+    -o /usr/local/lib/docker/cli-plugins/docker-buildx
+  sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
 else
   sudo apt-get update && sudo apt-get install -y docker.io docker-compose-v2 git
 fi

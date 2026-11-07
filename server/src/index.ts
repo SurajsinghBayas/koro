@@ -11,6 +11,7 @@ import { __state as cricketState, startCricket } from './services/cricket/engine
 import { refreshHistory } from './services/cricket/history.ts';
 import { refreshNews } from './services/news.ts';
 import { pushEnabled } from './services/push.ts';
+import { startXNotifier } from './services/xnotify.ts';
 
 const db = await openDb(env.DATABASE_URL);
 await migrate(db);
@@ -49,6 +50,7 @@ if (env.JOBS) {
   const history = () => refreshHistory(false, cricketState.recent);
   setTimeout(history, 20_000);
   setInterval(history, 30 * 60_000);
+  startXNotifier(db);
 }
 
 const server = Bun.serve({ port: env.PORT, hostname: env.HOST, fetch: app.fetch, idleTimeout: 30 });

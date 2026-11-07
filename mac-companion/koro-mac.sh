@@ -55,7 +55,7 @@ EOF
   <key>Label</key><string>com.koro.x</string>
   <key>ProgramArguments</key><array><string>/bin/sh</string><string>$SELF</string><string>x</string></array>
   <key>EnvironmentVariables</key><dict><key>PATH</key><string>$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string></dict>
-  <key>StartInterval</key><integer>600</integer>
+  <key>StartInterval</key><integer>180</integer>
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>/tmp/koro-x.log</string>
   <key>StandardErrorPath</key><string>/tmp/koro-x.err</string>
@@ -63,7 +63,7 @@ EOF
 XEOF
       launchctl unload "$XPLIST" 2>/dev/null || true
       launchctl load "$XPLIST"
-      echo "Installed: X posts are collected every 10 min during India/MI matches, else every 30 min."
+      echo "Installed: cricket posts from X every 3 min during India/MI matches, else every 15 min; My feed every 30 min."
     fi ;;
   uninstall)
     launchctl unload "$PLIST" 2>/dev/null || true; rm -f "$PLIST"

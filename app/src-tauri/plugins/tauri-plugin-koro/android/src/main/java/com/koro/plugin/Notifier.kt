@@ -5,6 +5,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -14,6 +16,8 @@ object Notifier {
     const val CH_LIVE = "match_live"     // silent; one notification per match, updated in place
     const val CH_ALERT = "match_alert"   // buzzes: milestones (10/20/30… overs, sessions) and results
     const val CH_GENERAL = "general"
+    const val CH_X_BREAKING = "x_breaking" // breaking cricket posts from X
+    const val CH_X_DIGEST = "x_digest"     // quiet 3-hourly X summary
 
     fun channels(c: Context) {
         if (Build.VERSION.SDK_INT < 26) return
@@ -23,6 +27,8 @@ object Notifier {
             NotificationChannel(CH_LIVE, "Live score (silent)", NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) },
             NotificationChannel(CH_ALERT, "Match updates", NotificationManager.IMPORTANCE_DEFAULT),
             NotificationChannel(CH_GENERAL, "General", NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(CH_X_BREAKING, "X: breaking cricket", NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(CH_X_DIGEST, "X: summaries", NotificationManager.IMPORTANCE_LOW),
         ))
     }
 
@@ -48,6 +54,29 @@ object Notifier {
             .setColor(0xFF3AA7E8.toInt())
             .build()
         try { NotificationManagerCompat.from(c).notify(id, n) } catch (_: SecurityException) { /* notifications not granted */ }
+    }
+
+    /** X post / summary: optional photo (BigPicture) and a link opened on tap (falls back to the app). */
+    fun x(c: Context, id: Int, channel: String, title: String, body: String, image: Bitmap?, url: String?) {
+        channels(c)
+        val tap = url?.takeIf { it.startsWith("https://") }?.let {
+            PendingIntent.getActivity(c, id, Intent(Intent.ACTION_VIEW, Uri.parse(it)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        } ?: openApp(c, id)
+        val b = NotificationCompat.Builder(c, channel)
+            .setSmallIcon(R.drawable.ic_stat_koro)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setContentIntent(tap)
+            .setAutoCancel(true)
+            .setColor(0xFF3AA7E8.toInt())
+        if (image != null) {
+            b.setLargeIcon(image)
+            b.setStyle(NotificationCompat.BigPictureStyle().bigPicture(image).bigLargeIcon(null as Bitmap?).setSummaryText(body))
+        } else {
+            b.setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        }
+        try { NotificationManagerCompat.from(c).notify(id, b.build()) } catch (_: SecurityException) { }
     }
 
     fun cancel(c: Context, id: Int) = NotificationManagerCompat.from(c).cancel(id)

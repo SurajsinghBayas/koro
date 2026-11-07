@@ -8,6 +8,7 @@ import { aiParse, getBrief, maybeRefreshBrief } from '../services/ai.ts';
 import { getMatches } from '../services/cricket/engine.ts';
 import { getNews, type NewsCat } from '../services/news.ts';
 import { notify, pushEnabled } from '../services/push.ts';
+import { onXIngest } from '../services/xnotify.ts';
 import { CRICKET_HANDLES, getX, ingest } from '../services/x.ts';
 
 type Env = { Variables: { device: Device } };
@@ -62,7 +63,9 @@ export function apiRoutes(db: Db) {
     if (!body || typeof body !== 'object') return c.json({ error: 'JSON body required' }, 400);
     const b = body as { feed?: unknown; cricket?: unknown };
     if ((b.feed && !Array.isArray(b.feed)) || (b.cricket && !Array.isArray(b.cricket))) return c.json({ error: 'feed and cricket must be arrays' }, 400);
-    return c.json({ ok: true, ...ingest({ feed: (b.feed as unknown[] | undefined)?.slice(0, 300), cricket: (b.cricket as unknown[] | undefined)?.slice(0, 300) }) });
+    const res = ingest({ feed: (b.feed as unknown[] | undefined)?.slice(0, 300), cricket: (b.cricket as unknown[] | undefined)?.slice(0, 300) });
+    void onXIngest(db).catch((e) => console.warn('[xnotify] failed', e));
+    return c.json({ ok: true, ...res });
   });
 
   r.get('/news', (c) => {

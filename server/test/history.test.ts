@@ -83,3 +83,19 @@ describe('x posts', () => {
     expect(score({ ...base, createdAt: '2026-11-07T23:00:00Z' }, now)).toBeGreaterThan(score({ ...base, createdAt: '2026-11-06T00:00:00Z' }, now));
   });
 });
+
+import { isBreaking } from '../src/services/xnotify.ts';
+describe('x notifications', () => {
+  const now = Date.parse('2026-11-08T10:00:00Z');
+  const p = (text: string, likes = 50, minsAgo = 10) => ({ id: '1', author: 'a', text, url: '', createdAt: new Date(now - minsAgo * 60_000).toISOString(), likes, retweets: 0, replies: 0, views: 0, media: [] });
+  test('breaking keywords and fast-rising posts notify', () => {
+    expect(isBreaking(p('🚨 HARDIK AND ARSHDEEP TRADE DEAL IS SIGNED'), now)).toBe(true);
+    expect(isBreaking(p('Rohit Sharma set to be announced as MI captain'), now)).toBe(true);
+    expect(isBreaking(p('India playing XI for the 2nd ODI'), now)).toBe(true);
+    expect(isBreaking(p('Lovely pic of the boys', 4000, 20), now)).toBe(true); // 200 likes/min
+  });
+  test('ordinary posts do not', () => {
+    expect(isBreaking(p('Diwali celebration of Hardik Pandya'), now)).toBe(false);
+    expect(isBreaking(p('Practice session ahead of the series', 500, 30), now)).toBe(false);
+  });
+});

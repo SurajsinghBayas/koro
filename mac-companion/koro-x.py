@@ -1,9 +1,9 @@
 """
-Koro X collector (runs on the Mac, every 10 minutes via koro-mac.sh).
+Koro X collector (runs on the Mac every 3 minutes via koro-mac.sh; decides itself what is due).
 
 Reads X through Agent-Reach (its logged-in dedicated browser; read-only, no API fees) and sends the posts to
 your Koro server:
-  * cricket: latest posts from fast cricket-update accounts (every 10 min during an India/MI live match, else 30 min)
+  * cricket: latest posts from fast cricket-update accounts (every 3 min during an India/MI live match, else 15 min)
   * feed:    top posts by engagement from the accounts you follow (every 30 min)
 
 Run with Agent-Reach's Python so the timeline call shares its browser:
@@ -106,7 +106,8 @@ def main():
 
     payload = {"feed": [], "cricket": []}
     try:
-        if force or live or now - st.get("cricket", 0) >= 29 * 60:
+        cricket_every = (3 if live else 15) * 60 - 20  # small slack for launchd timing
+        if force or now - st.get("cricket", 0) >= cricket_every:
             for h in cfg.get("cricket", []):
                 payload["cricket"] += user_tweets(h, cfg.get("cricketPerHandle", 15))
             st["cricket"] = now

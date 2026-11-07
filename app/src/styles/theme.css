@@ -59,10 +59,12 @@
   --dither-dot:  light-dark(rgba(10,20,40,.045),   rgba(255,255,255,.035));
 
   /* type */
-  /* Geist Pixel (Square) → headings · Departure Mono → clock/scores · Pixelify = fallback */
-  --font-pixel: "Pixelify Sans Variable", "Pixelify Sans", ui-monospace, monospace;  /* numerals + logo only */
-  --font-mono:  "Pixelify Sans Variable", ui-monospace, monospace;
   --font-body:  "Geist Variable", "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Numbers use the same clean sans (tabular figures) so scores and times are easy to read.
+     The pixel font is kept only for the KORO logo. */
+  --font-pixel: var(--font-body);
+  --font-mono:  var(--font-body);
+  --font-logo:  "Pixelify Sans Variable", "Pixelify Sans", ui-monospace, monospace;
   --fs-xs: .75rem;  --fs-sm: .875rem; --fs-md: 1rem;
   --fs-lg: 1.25rem; --fs-xl: 1.625rem; --fs-2xl: 2.25rem; --fs-clock: clamp(4rem, 22vw, 11rem);
 
@@ -138,7 +140,8 @@ h3 { font-size: var(--fs-lg); font-weight: 650; letter-spacing: -.01em; }
   color: var(--text-3);
 }
 .num { font-family: var(--font-body); font-weight: 600; font-variant-numeric: tabular-nums; }
-.display-pixel { font-family: var(--font-pixel); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.display-pixel { font-family: var(--font-body); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.logo { font-family: var(--font-logo); letter-spacing: .3em; }
 .muted { color: var(--text-3); }
 .gold-text { color: var(--gold-text); }
 .sky-text  { color: var(--accent-text); }
@@ -372,24 +375,29 @@ h3 { font-size: var(--fs-lg); font-weight: 650; letter-spacing: -.01em; }
 /* ---------- Desk mode (clock + calendar) ---------- */
 .desk {
   position: fixed; inset: 0;
-  color-scheme: dark;                /* desk is always AMOLED black, any theme */
-  background: #000;
-  color: var(--silver-300);
-  display: grid; grid-template-columns: 1.4fr 1fr; align-items: center;
+  /* follows the app theme: paper-white by day, AMOLED black at night */
+  --desk-bg:   light-dark(#F3F6FA, #000);
+  --desk-flap: light-dark(#FFFFFF, #0B0F18);
+  --desk-num:  light-dark(#0A1428, var(--silver-100));
+  --desk-line: light-dark(#E3EAF3, #000);
+  --desk-dim:  light-dark(var(--silver-500), var(--silver-700));
+  background: var(--desk-bg);
+  color: var(--text-2);
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5vw; align-items: center;
   padding: 5vh 6vw;
   /* burn-in guard: JS sets --dx/--dy to -2..2px once a minute */
   transform: translate(var(--dx, 0px), var(--dy, 0px));
   transition: transform 2s linear;
 }
 .desk__time {
-  font: 500 var(--fs-clock)/.9 var(--font-pixel);
+  font: 600 var(--fs-clock)/.9 var(--font-body);
   font-variant-numeric: tabular-nums;
   letter-spacing: -.02em;
-  color: var(--silver-100);
+  color: var(--desk-num);
 }
 .desk__sec  { font-size: .35em; color: var(--gold); opacity: .85; }
 .desk__date { margin-top: var(--s3); font: 600 var(--fs-lg) var(--font-body); color: var(--accent); letter-spacing: .06em; text-transform: uppercase; }
-.desk__agenda .list-row { border-color: rgba(201,209,220,.08); }
+.desk__agenda .list-row { border-color: var(--line); }
 .desk--dim { opacity: .45; }         /* night: dim via opacity (compositor-only) */
 @media (orientation: portrait) {
   .desk { grid-template-columns: 1fr; align-content: center; gap: var(--s6); text-align: center; }

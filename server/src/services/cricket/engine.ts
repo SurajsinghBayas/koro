@@ -4,6 +4,7 @@ import { notify } from '../push.ts';
 import { cricinfo } from './cricinfo.ts';
 import { budget as cdBudget, canSpend, cricketdata } from './cricketdata.ts';
 import { abbreviate, currentInnings, detectEvents, isMI, isResult, oversToReal, RULES, summarize } from './rules.ts';
+import { form, getHistory } from './history.ts';
 import { sportmonks } from './sportmonks.ts';
 import type { Match } from './types.ts';
 
@@ -216,13 +217,22 @@ export function getMatches() {
   const upcoming = state.fixtures
     .filter((f) => f.state === 'upcoming' && f.startsAt && Date.parse(f.startsAt) > now - 3_600_000 && !live.some((l) => teamKey(l.teams) === teamKey(f.teams)))
     .sort((a, b) => a.startsAt!.localeCompare(b.startsAt!));
+  const h = getHistory();
+  const sameGame = (a: Match, b: Match) => teamKey(a.teams) === teamKey(b.teams) && (a.startsAt ?? '').slice(0, 10) === (b.startsAt ?? '').slice(0, 10);
   const recentFromFixtures = state.fixtures.filter((f) => f.state === 'done');
-  const recent = [...state.recent, ...recentFromFixtures.filter((f) => !state.recent.some((r) => teamKey(r.teams) === teamKey(f.teams) && r.startsAt === f.startsAt))]
-    .sort((a, b) => (b.startsAt ?? b.updatedAt).localeCompare(a.startsAt ?? a.updatedAt)).slice(0, 10);
+  const recent = [...h.recent, ...state.recent, ...recentFromFixtures]
+    .filter((m, i, all) => all.findIndex((x) => x.id === m.id || sameGame(x, m)) === i)
+    .sort((a, b) => (b.startsAt ?? b.updatedAt).localeCompare(a.startsAt ?? a.updatedAt)).slice(0, 12);
+  const allUpcoming = [...upcoming, ...h.upcoming.filter((u) => Date.parse(u.startsAt!) > now - 3_600_000 && !live.some((l) => teamKey(l.teams) === teamKey(u.teams)))]
+    .filter((m, i, all) => all.findIndex((x) => x.id === m.id || sameGame(x, m)) === i)
+    .sort((a, b) => a.startsAt!.localeCompare(b.startsAt!));
   return {
     live: live.map((m) => ({ ...m, summary: summarize(m) })),
-    upcoming: upcoming.slice(0, 10),
+    upcoming: allUpcoming.slice(0, 10),
     recent: recent.map((m) => ({ ...m, summary: summarize(m) })),
+    tables: h.tables,
+    story: h.story,
+    form: { india: form('india'), mi: form('mi') },
     sources: {
       cricinfo: state.health.cricinfo ?? null,
       cricketdata: cricketdata.enabled() ? { ...state.health.cricketdata, hitsToday: cdBudget.hitsToday, hitsLimit: cdBudget.hitsLimit } : 'not configured',

@@ -4,9 +4,9 @@ import type { Db } from '../db.ts';
 
 /** Synced tables and their client-writable columns (besides id / updated_at / deleted_at). */
 export const SYNC_TABLES = {
-  tasks: ['title', 'notes', 'due_on', 'priority', 'done_at', 'sort'],
-  grocery_items: ['name', 'category', 'bought_at', 'sort'],
-  habits: ['name', 'days_mask', 'sort'],
+  tasks: ['title', 'notes', 'due_on', 'due_time', 'priority', 'done_at', 'sort'],
+  grocery_items: ['name', 'category', 'need_by', 'bought_at', 'sort'],
+  habits: ['name', 'days_mask', 'remind_time', 'sort'],
   habit_logs: ['habit_id', 'day'],
   reminders: ['title', 'fire_at', 'repeat', 'done_at'],
 } as const;

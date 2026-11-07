@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import Icon from './components/Icon.svelte';
   import { native } from './lib/native.ts';
-  import { app, init, loadHome, refreshAll, rescheduleAll, sync, type Tab } from './lib/store.svelte.ts';
+  import { app, init, loadHome, refreshAll, rescheduleAll, startMediaLoop, sync, type Tab } from './lib/store.svelte.ts';
   import { dissolve } from './lib/util.ts';
   import Desk from './screens/Desk.svelte';
   import Home from './screens/Home.svelte';
@@ -27,6 +28,12 @@
     return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('online', online); clearTimeout(t); };
   });
 
+  // Now playing: polled only while Home or desk mode is on screen
+  $effect(() => {
+    if (!app.ready || !(app.tab === 'home' || app.desk)) return;
+    return untrack(startMediaLoop); // the loop reads app.media; don't let that re-trigger this effect
+  });
+
   // Battery saver hint → disable animations
   $effect(() => {
     const b = app.battery;
@@ -34,7 +41,11 @@
     else delete document.documentElement.dataset.power;
   });
 
-  function enterDesk() { dissolve(() => { app.desk = true; void native.desk(true); }, '#000'); }
+  function enterDesk() {
+    const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+    const t = document.documentElement.dataset.theme;
+    dissolve(() => { app.desk = true; void native.desk(true); }, (t ? t === 'dark' : dark) ? '#000' : '#F3F6FA');
+  }
   function exitDesk() {
     const bg = getComputedStyle(document.body).backgroundColor;
     dissolve(() => { app.desk = false; void native.desk(false); }, bg);
@@ -57,7 +68,7 @@
 </script>
 
 {#if !app.ready}
-  <div class="splash"><span class="display-pixel">KORO</span></div>
+  <div class="splash"><span class="logo">KORO</span></div>
 {:else if app.desk}
   <Desk onExit={exitDesk} />
 {:else}

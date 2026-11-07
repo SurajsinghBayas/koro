@@ -1,4 +1,5 @@
 <script lang="ts">
+  import NowPlaying from '../components/NowPlaying.svelte';
   import { app, upcomingReminders } from '../lib/store.svelte.ts';
   import { dayKey, fmtTime } from '../lib/util.ts';
 
@@ -48,6 +49,7 @@
     {#if app.battery}<div class="batt">Phone {app.battery.pct}%{app.battery.charging ? ' · charging' : ''}</div>{/if}
   </div>
   <div class="desk__agenda list">
+    {#if app.media?.active}<div class="np"><NowPlaying compact /></div>{/if}
     {#if live?.summary}<div class="list-row live"><span class="badge badge--live">Live</span>&nbsp;{live.summary.body}</div>{/if}
     {#each agenda as a}
       <div class="list-row"><span class="num" class:gold-text={a.gold} class:sky-text={!a.gold}>{fmtTime(a.at)}</span>&nbsp; {a.title}</div>
@@ -61,13 +63,15 @@
 <style>
   .desk { text-align: left; width: 100%; border: 0; z-index: 50; }
   .flaps { display: flex; gap: 8px; align-items: center; }
-  .flap { position: relative; width: 1.15ch; height: 1.4em; font: 700 clamp(3.5rem, 15vw, 8rem)/1.4 var(--font-pixel);
-          background: #0B0F18; color: var(--silver-100); text-align: center; }
-  .flap::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: #000; }
+  .flap { position: relative; width: 1.15ch; height: 1.4em; font: 700 clamp(3rem, min(11vw, 22vh), 7rem)/1.4 var(--font-body);
+          font-variant-numeric: tabular-nums; background: var(--desk-flap); color: var(--desk-num); text-align: center;
+          border-radius: 6px; box-shadow: 0 2px 10px var(--elev), inset 0 0 0 1px var(--line); }
+  .flap::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: var(--desk-line); }
   .flap.flip { animation: flip 420ms steps(6) 1; }
   @keyframes flip { 50% { transform: rotateX(-90deg); } }
-  .colon { font: 700 clamp(3rem, 12vw, 6rem) var(--font-pixel); color: var(--gold); }
-  .batt { margin-top: 8px; color: var(--silver-500); font-size: var(--fs-sm); }
-  .live { color: var(--silver-100); }
-  .exit { margin-top: var(--s4); font-size: var(--fs-xs); color: var(--silver-700); }
+  .colon { font: 700 clamp(2.5rem, min(9vw, 18vh), 5.5rem) var(--font-body); color: var(--gold); }
+  .batt { margin-top: 8px; color: var(--text-3); font-size: var(--fs-sm); }
+  .live { color: var(--text); }
+  .np { margin-bottom: var(--s3); }
+  .exit { margin-top: var(--s4); font-size: var(--fs-xs); color: var(--desk-dim); }
 </style>

@@ -1,5 +1,7 @@
 <script lang="ts">
   import Icon from '../components/Icon.svelte';
+  import ItemSheet, { type SheetItem } from '../components/ItemSheet.svelte';
+  import NowPlaying from '../components/NowPlaying.svelte';
   import MatchRow from '../components/MatchRow.svelte';
   import Odo from '../components/Odo.svelte';
   import { openUrl } from '../lib/open.ts';
@@ -7,7 +9,9 @@
     app, doneReminder, groceryOpen, habits, quickAdd, refreshAll, startFocus, startSleep, stopFocus, stopSleep,
     streak, toast, todayTasks, toggleGrocery, toggleHabit, toggleTask, doneOn, upcomingReminders, paired,
   } from '../lib/store.svelte.ts';
-  import { ago, fmtWhen, greeting } from '../lib/util.ts';
+  import { ago, dueInfo, fmtWhen, greeting } from '../lib/util.ts';
+
+  let sheet = $state<SheetItem | null>(null);
 
   let { onDesk }: { onDesk: () => void } = $props();
 
@@ -87,6 +91,8 @@
     </div>
   </form>
 
+  <NowPlaying />
+
   {#if matchList.length}
     <section class="card" id="matchCard">
       <div class="card__title"><h3>Matches</h3><button class="label linkish" onclick={() => (app.tab = 'matches')}>MI · India ›</button></div>
@@ -99,10 +105,14 @@
     {#if tasks.length === 0}<p class="muted">Nothing due. Add something above.</p>{/if}
     <div class="list">
       {#each tasks.slice(0, 6) as t (t.id)}
-        <label class="list-row" class:is-done={!!t.done_at}>
-          <input type="checkbox" class="check" checked={!!t.done_at} onchange={() => toggleTask(t)} />
-          <span class="list-row__text">{t.title}</span>
-        </label>
+        {@const due = dueInfo(t.due_on, t.due_time)}
+        <div class="list-row" class:is-done={!!t.done_at}>
+          <input type="checkbox" class="check" checked={!!t.done_at} onchange={() => toggleTask(t)} aria-label="Done" />
+          <button class="edit" onclick={() => (sheet = { table: 'tasks', row: t })}>
+            <span class="list-row__text">{t.title}</span>
+            {#if due && !t.done_at && (t.due_time || due.overdue)}<span class="due" class:overdue={due.overdue} class:soon={due.soon}>{due.overdue ? 'Overdue · ' : ''}{due.label}</span>{/if}
+          </button>
+        </div>
       {/each}
     </div>
     {#if tasks.length > 6}<button class="label linkish mt-2" onclick={() => (app.tab = 'lists')}>{tasks.length - 6} more ›</button>{/if}
@@ -115,7 +125,7 @@
         {#each reminders as r (r.id)}
           <div class="list-row">
             <span class="num sky-text when">{fmtWhen(r.fire_at)}</span>
-            <span class="grow">{r.title}{#if r.repeat === 'daily'} <span class="muted">· daily</span>{/if}</span>
+            <button class="grow edit" onclick={() => (sheet = { table: 'reminders', row: r })}><span>{r.title}{#if r.repeat === 'daily'} <span class="muted">· daily</span>{/if}</span></button>
             <button class="mini" onclick={() => doneReminder(r)} aria-label="Done"><Icon name="x" size={16} /></button>
           </div>
         {/each}
@@ -141,7 +151,7 @@
     {#each habits() as h (h.id)}
       <label class="habit">
         <input type="checkbox" class="check" checked={doneOn(h)} onchange={() => toggleHabit(h)} />
-        <span>{h.name}</span>
+        <span>{h.name}{#if h.remind_time}<span class="muted small"> · {h.remind_time}</span>{/if}</span>
         <span class="streak">{streak(h)} {streak(h) === 1 ? 'day' : 'days'}</span>
       </label>
     {:else}
@@ -182,9 +192,18 @@
         {/each}
       </div>
       <div class="mt-2">
-        {#each (app.home.news[newsCat] ?? []).slice(0, 4) as n (n.id)}
-          <button class="news-item" onclick={() => openUrl(n.url)}><b>{n.title}</b><span>{n.source} · {ago(n.publishedAt)}</span></button>
-        {/each}
+        {#if app.home.news.digest?.[newsCat]?.length}
+          {#each app.home.news.digest[newsCat]!.slice(0, 3) as s (s.url)}
+            <button class="news-item" onclick={() => openUrl(s.url)}>
+              <div class="news-text"><b>{s.title}</b>{#if s.summary}<p>{s.summary}</p>{/if}<span>{s.sources[0]?.source}{s.sources.length > 1 ? ` +${s.sources.length - 1}` : ''} · {ago(s.publishedAt)}</span></div>
+              {#if s.image}<img src={s.image} alt="" loading="lazy" referrerpolicy="no-referrer" onerror={(e) => ((e.currentTarget as HTMLElement).style.display = 'none')} />{/if}
+            </button>
+          {/each}
+        {:else}
+          {#each (app.home.news[newsCat] ?? []).slice(0, 4) as n (n.id)}
+            <button class="news-item" onclick={() => openUrl(n.url)}><div class="news-text"><b>{n.title}</b><span>{n.source} · {ago(n.publishedAt)}</span></div></button>
+          {/each}
+        {/if}
       </div>
     </section>
   {/if}
@@ -207,6 +226,8 @@
   {/if}
 </main>
 
+{#if sheet}<ItemSheet item={sheet} onClose={() => (sheet = null)} />{/if}
+
 <style>
   .head { display: flex; justify-content: space-between; align-items: flex-start; padding-top: var(--s2); }
   .banner { display: flex; flex-direction: column; gap: 4px; text-align: left; }
@@ -224,10 +245,17 @@
   .habit { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: var(--s3); min-height: 48px; }
   .streak { font-size: var(--fs-sm); font-weight: 650; color: var(--gold-text); }
   .xrow { display: flex; flex-direction: column; gap: 6px; margin-top: var(--s2); }
-  .news-item { display: block; width: 100%; text-align: left; padding: var(--s3) 0; border-bottom: 1px solid var(--line); }
+  .news-item { display: grid; grid-template-columns: 1fr auto; gap: var(--s3); width: 100%; text-align: left; padding: var(--s3) 0; border-bottom: 1px solid var(--line); }
   .news-item:last-child { border-bottom: 0; padding-bottom: 0; }
+  .news-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .news-item b { display: block; font-weight: 600; line-height: 1.35; }
+  .news-item p { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
   .news-item span { font-size: var(--fs-xs); color: var(--text-3); }
+  .news-item img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; }
+  .edit { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; }
+  .due { font-size: var(--fs-xs); color: var(--accent-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .due.soon { color: var(--gold-text); } .due.overdue { color: var(--danger); }
+  .small { font-size: var(--fs-xs); }
   .chips.wrap { flex-wrap: wrap; }
   .sync-line { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-3); padding: var(--s2); }
 </style>

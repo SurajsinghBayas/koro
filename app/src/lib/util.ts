@@ -64,3 +64,26 @@ export function dissolve(swap: () => void, color: string) {
     if (i === 0 && dir === -1) { clearInterval(iv); c.remove(); }
   }, 22);
 }
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+export const hhmm = (d: Date) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+export const addDays = (n: number, d = new Date()) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+
+/** "Today", "Tomorrow", "Yesterday", "Sat 14 Nov" for a YYYY-MM-DD local date. */
+export function fmtDay(day: string) {
+  if (day === dayKey()) return 'Today';
+  if (day === dayKey(addDays(1))) return 'Tomorrow';
+  if (day === dayKey(addDays(-1))) return 'Yesterday';
+  const d = new Date(`${day}T12:00:00`);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) });
+}
+
+/** Due label + state for a date (and optional HH:mm). */
+export function dueInfo(day?: string | null, time?: string | null) {
+  if (!day) return null;
+  const at = new Date(`${day}T${time ?? '23:59'}:00`);
+  const overdue = at.getTime() < Date.now();
+  const soon = !overdue && at.getTime() - Date.now() < 3 * 3_600_000;
+  return { label: `${fmtDay(day)}${time ? ` ${time}` : ''}`, overdue, soon };
+}

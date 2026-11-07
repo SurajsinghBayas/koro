@@ -11,7 +11,7 @@ import type { Batter, Innings, Match, ScoreSource } from './types.ts';
 const BASE = 'https://api.cricapi.com/v1';
 
 type CdScore = { r: number; w: number; o: number; inning: string };
-type CdMatch = {
+export type CdMatch = {
   id: string; name: string; matchType: string; status: string; venue?: string; date?: string; dateTimeGMT?: string;
   teams?: string[]; teamInfo?: { name: string; shortname?: string }[]; score?: CdScore[]; series_id?: string;
   matchStarted?: boolean; matchEnded?: boolean;
@@ -38,6 +38,12 @@ async function call<T>(path: string, params: Record<string, string | number> = {
   if (res.status !== 'success') throw new Error(`CricketData ${path}: ${res.reason ?? res.status}`);
   return res.data;
 }
+
+/** Season data (series lists, tables, match info): 1 hit each, keeps 25 hits in reserve for live overs. */
+export const seriesCall = <T>(path: string, params: Record<string, string | number>) => {
+  if (!canSpend(26)) return Promise.reject(new Error('Saving CricketData budget for live matches'));
+  return call<T>(path, params);
+};
 
 const teamOfInning = (inning: string, teams: string[]) =>
   teams.find((t) => inning.toLowerCase().startsWith(t.toLowerCase())) ?? inning.replace(/\s+inning.*$/i, '');

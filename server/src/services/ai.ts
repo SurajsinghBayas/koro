@@ -16,6 +16,20 @@ export async function chat(messages: { role: 'system' | 'user'; content: string 
   return (j.choices?.[0]?.message?.content ?? '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 }
 
+/** Chat that must return a JSON object: parses leniently and retries once with a stricter reminder. */
+export async function chatJson<T = Record<string, unknown>>(messages: { role: 'system' | 'user'; content: string }[], maxTokens = 600, timeoutMs = 40_000): Promise<T> {
+  let last: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const msgs = attempt === 0 ? messages : [...messages, { role: 'user' as const, content: 'Your previous reply was not valid JSON. Reply again with ONLY valid JSON. Escape any double quotes inside strings.' }];
+    try {
+      const j = firstJson(await chat(msgs, maxTokens, timeoutMs));
+      if (j && typeof j === 'object') return j as T;
+      last = new Error('no JSON object');
+    } catch (e) { last = e; if ((e as Error).message.startsWith('AI ')) throw e; }
+  }
+  throw last instanceof Error ? last : new Error('AI returned no usable JSON');
+}
+
 const firstJson = (s: string) => {
   const m = s.replace(/```(?:json)?/g, '').match(/\{[\s\S]*\}/);
   return m ? JSON.parse(m[0]) : null;

@@ -33,10 +33,11 @@ export function apiRoutes(db: Db) {
       now: new Date().toISOString(),
       me: c.get('device'),
       brief: getBrief(),
-      matches: { live: matches.live, upcoming: matches.upcoming.slice(0, 3), recent: matches.recent.slice(0, 2) },
+      matches: { live: matches.live, upcoming: matches.upcoming.slice(0, 3), recent: matches.recent.slice(0, 2).map(({ innings, ...m }) => ({ ...m, innings })) },
       news: {
         tech: news.items.tech.slice(0, 6), india: news.items.india.slice(0, 6),
         world: news.items.world.slice(0, 4), cricket: news.items.cricket.slice(0, 4), updatedAt: news.updatedAt,
+        digest: Object.fromEntries(Object.entries(news.digest ?? {}).map(([k, d]) => [k, d!.stories.slice(0, 3)])),
       },
       devices,
       inbox,
@@ -54,7 +55,7 @@ export function apiRoutes(db: Db) {
   r.get('/news', (c) => {
     const cat = (c.req.query('cat') ?? 'tech') as NewsCat;
     const n = getNews();
-    return c.json({ cat, items: n.items[cat] ?? [], updatedAt: n.updatedAt, errors: n.errors });
+    return c.json({ cat, items: n.items[cat] ?? [], digest: n.digest?.[cat] ?? null, updatedAt: n.updatedAt });
   });
 
   r.post('/devices/battery', async (c) => {

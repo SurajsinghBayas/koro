@@ -120,7 +120,8 @@ class KoroPlugin(private val activity: Activity) : Plugin(activity) {
             .put("exactAlarm", Alarms.canExact(ctx))
             .put("dnd", nm.isNotificationPolicyAccessGranted)
             .put("usage", usageGranted())
-            .put("batteryUnrestricted", pm.isIgnoringBatteryOptimizations(ctx.packageName)))
+            .put("batteryUnrestricted", pm.isIgnoringBatteryOptimizations(ctx.packageName))
+            .put("media", Media.granted(ctx)))
     }
 
     @Command
@@ -131,6 +132,7 @@ class KoroPlugin(private val activity: Activity) : Plugin(activity) {
             "exactAlarm" -> if (Build.VERSION.SDK_INT >= 31) Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$pkg")) else null
             "dnd" -> Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
             "usage" -> Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+            "media" -> Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
             "battery" -> @Suppress("BatteryLife") Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$pkg"))
             else -> null
         } ?: Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg"))
@@ -178,6 +180,18 @@ class KoroPlugin(private val activity: Activity) : Plugin(activity) {
             }
         }
         invoke.resolve()
+    }
+
+    @Command
+    fun media(invoke: Invoke) {
+        val key = invoke.getArgs().optString("artKey", "")
+        invoke.resolve(Media.snapshot(ctx, key.ifEmpty { null }))
+    }
+
+    @Command
+    fun mediaControl(invoke: Invoke) {
+        val a = invoke.getArgs()
+        invoke.resolve(JSObject().put("ok", Media.control(ctx, a.optString("action"), a.optLong("pos"))))
     }
 
     @Command

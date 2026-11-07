@@ -48,6 +48,7 @@
     { key: 'batteryUnrestricted', kind: 'battery', label: 'Battery: Unrestricted', why: 'Samsung can otherwise delay match alerts' },
     { key: 'dnd', kind: 'dnd', label: 'Do Not Disturb access', why: 'Focus mode silences calls/notifications' },
     { key: 'usage', kind: 'usage', label: 'Usage access', why: 'Shows your X screen time' },
+    { key: 'media', kind: 'media', label: 'Notification access', why: 'Shows what Spotify / YT Music is playing, with controls' },
   ];
 </script>
 

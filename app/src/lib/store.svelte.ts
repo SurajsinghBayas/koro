@@ -1,14 +1,14 @@
 import { localWallClock, parseQuick, type QuickResult } from '../../../shared/quickadd.ts';
 import { ApiError, request } from './api.ts';
 import { kvClear, kvGet, kvSet } from './kv.ts';
-import { native } from './native.ts';
+import { native, type NowPlaying } from './native.ts';
 import { dayKey, localNowLabel, nowIso, uuid7 } from './util.ts';
 
 // ---------- types ----------
 type Base = { id: string; updated_at: string; deleted_at?: string | null };
-export type Task = Base & { title: string; notes?: string | null; due_on?: string | null; priority: number; done_at?: string | null; sort: number };
-export type Grocery = Base & { name: string; category?: string | null; bought_at?: string | null; sort: number };
-export type Habit = Base & { name: string; days_mask: number; sort: number };
+export type Task = Base & { title: string; notes?: string | null; due_on?: string | null; due_time?: string | null; priority: number; done_at?: string | null; sort: number };
+export type Grocery = Base & { name: string; category?: string | null; need_by?: string | null; bought_at?: string | null; sort: number };
+export type Habit = Base & { name: string; days_mask: number; remind_time?: string | null; sort: number };
 export type HabitLog = Base & { habit_id: string; day: string };
 export type Reminder = Base & { title: string; fire_at: string; repeat?: string | null; done_at?: string | null };
 type Tables = { tasks: Task; grocery_items: Grocery; habits: Habit; habit_logs: HabitLog; reminders: Reminder };
@@ -19,13 +19,22 @@ export type Innings = { team: string; inning: number; runs: number; wkts: number
 export type Match = {
   id: string; name: string; format: string; teams: [string, string]; short?: [string, string]; startsAt?: string; venue?: string;
   status: string; state: 'upcoming' | 'live' | 'done'; innings: Innings[]; rule?: string; summary?: { title: string; body: string };
+  series?: string; recap?: string; winner?: string; team?: 'india' | 'mi';
 };
-export type NewsItem = { id: string; title: string; url: string; source: string; publishedAt: string; cat: string };
+export type NewsItem = { id: string; title: string; url: string; source: string; publishedAt: string; cat: string; desc?: string; image?: string };
+export type Story = { title: string; summary: string; url: string; image?: string; publishedAt: string; sources: { source: string; url: string }[] };
+export type TableRow = { team: string; short?: string; img?: string; p: number; w: number; l: number; nr: number; pts: number };
+export type MatchesFull = {
+  live: Match[]; upcoming: Match[]; recent: Match[];
+  tables?: { series: string; rows: TableRow[] }[];
+  story?: { india?: string; mi?: string; at?: string };
+  form?: { india: string[]; mi: string[] };
+};
 export type DeviceRow = { id: string; name: string; kind: string; battery_pct: number | null; charging: boolean | null; battery_at: string | null; last_seen: string | null };
 export type Home = {
   brief: { text: string; at: string } | null;
   matches: { live: Match[]; upcoming: Match[]; recent: Match[] };
-  news: Record<'tech' | 'india' | 'world' | 'cricket', NewsItem[]> & { updatedAt: string | null };
+  news: Record<'tech' | 'india' | 'world' | 'cricket', NewsItem[]> & { updatedAt: string | null; digest?: Partial<Record<string, Story[]>> };
   devices: DeviceRow[];
   inbox: { id: number; kind: string; title: string; body: string; created_at: string }[];
   features: { ai: boolean; push: boolean; cricketDetail: boolean; sportmonks: boolean };
@@ -49,8 +58,10 @@ export const app = $state({
   reminders: [] as Reminder[],
   home: null as Home | null,
   homeEtag: '' as string,
-  matchesFull: null as null | { live: Match[]; upcoming: Match[]; recent: Match[]; sources: Record<string, unknown>; rules: Record<string, { label: string }> },
+  matchesFull: null as null | MatchesFull,
   news: {} as Record<string, NewsItem[]>,
+  digest: {} as Record<string, { at: string; stories: Story[] } | null>,
+  media: null as null | (NowPlaying & { at: number }),
   focus: { endsAt: 0 },
   sleep: { endsAt: 0 },
   screenTime: null as number | null,
@@ -107,9 +118,11 @@ function write<K extends TableName>(table: K, row: Tables[K]) {
   outbox.push({ table, row: JSON.parse(JSON.stringify(row)) });
   void persist(table);
   void saveOutbox();
-  if (table === 'reminders') void scheduleNative(row as Reminder);
+  scheduleAlarm(table, row);
   scheduleSync();
 }
+/** Public edit (title, date, time, repeat…). */
+export function update<K extends TableName>(table: K, row: Tables[K]) { write(table, { ...row }); }
 
 export function remove(table: TableName, id: string) {
   const row = (app[table] as Base[]).find((r) => r.id === id);
@@ -126,9 +139,11 @@ export const todayTasks = () => {
     .sort((a, b) => Number(!!a.done_at) - Number(!!b.done_at) || b.priority - a.priority || a.sort - b.sort);
 };
 export const allTasks = () => live(app.tasks).sort((a, b) => Number(!!a.done_at) - Number(!!b.done_at) || (b.done_at ?? '').localeCompare(a.done_at ?? '') || a.sort - b.sort);
-export function addTask(title: string, due_on: string | null = null) {
-  write('tasks', { id: uuid7(), title, due_on, priority: 0, sort: Date.now() % 1e9, updated_at: '' } as Task);
+export function addTask(title: string, due_on: string | null = null, due_time: string | null = null) {
+  write('tasks', { id: uuid7(), title, due_on: due_on ?? (due_time ? dayKey() : null), due_time, priority: 0, sort: Date.now() % 1e9, updated_at: '' } as Task);
 }
+/** Local Date for a task's due date + time (time defaults to end of day for sorting). */
+export const taskDue = (t: Task) => (t.due_on ? new Date(`${t.due_on}T${t.due_time ?? '23:59'}:00`) : null);
 export function toggleTask(t: Task) {
   write('tasks', { ...t, done_at: t.done_at ? null : nowIso() });
   native.vibrate(t.done_at ? 8 : [10, 40, 10]);
@@ -137,11 +152,11 @@ export function toggleTask(t: Task) {
 // grocery
 export const groceryOpen = () => live(app.grocery_items).filter((g) => !g.bought_at).sort((a, b) => a.sort - b.sort);
 export const groceryBought = () => live(app.grocery_items).filter((g) => g.bought_at && Date.now() - Date.parse(g.bought_at) < 3 * 86_400_000);
-export function addGrocery(names: string[]) {
+export function addGrocery(names: string[], need_by: string | null = null) {
   for (const n of names) {
     const existing = live(app.grocery_items).find((g) => g.name.toLowerCase() === n.toLowerCase());
-    if (existing) { if (existing.bought_at) write('grocery_items', { ...existing, bought_at: null }); continue; }
-    write('grocery_items', { id: uuid7(), name: n, sort: Date.now() % 1e9, updated_at: '' } as Grocery);
+    if (existing) { if (existing.bought_at || need_by) write('grocery_items', { ...existing, bought_at: null, need_by: need_by ?? existing.need_by ?? null }); continue; }
+    write('grocery_items', { id: uuid7(), name: n, need_by, sort: Date.now() % 1e9, updated_at: '' } as Grocery);
   }
 }
 export function toggleGrocery(g: Grocery) { write('grocery_items', { ...g, bought_at: g.bought_at ? null : nowIso() }); native.vibrate(10); }
@@ -153,7 +168,7 @@ export const grocerySuggestions = () => {
 
 // habits
 export const habits = () => live(app.habits).sort((a, b) => a.sort - b.sort);
-export function addHabit(name: string) { write('habits', { id: uuid7(), name, days_mask: 127, sort: Date.now() % 1e9, updated_at: '' } as Habit); }
+export function addHabit(name: string, remind_time: string | null = null) { write('habits', { id: uuid7(), name, days_mask: 127, remind_time, sort: Date.now() % 1e9, updated_at: '' } as Habit); }
 export const doneOn = (h: Habit, day = dayKey()) => app.habit_logs.some((l) => l.habit_id === h.id && l.day === day && !l.deleted_at);
 export function toggleHabit(h: Habit) {
   const day = dayKey();
@@ -192,13 +207,35 @@ async function scheduleNative(r: Reminder) {
   const at = Date.parse(r.fire_at);
   if (at > Date.now()) return native.scheduleReminder({ id: r.id, title: r.title, at, repeat: r.repeat });
 }
+/** Tasks with a time and habits with a nudge time get their own exact alarms (ids prefixed so they never clash). */
+function scheduleAlarm(table: TableName, row: Base) {
+  if (table === 'reminders') return void scheduleNative(row as Reminder);
+  if (table === 'tasks') {
+    const t = row as Task;
+    const at = t.due_time ? taskDue(t) : null;
+    if (t.deleted_at || t.done_at || !at || at.getTime() <= Date.now()) return void native.cancelReminder(`task:${t.id}`);
+    return void native.scheduleReminder({ id: `task:${t.id}`, title: t.title, at: at.getTime() });
+  }
+  if (table === 'habits') {
+    const h = row as Habit;
+    if (h.deleted_at || !h.remind_time) return void native.cancelReminder(`habit:${h.id}`);
+    const [hh, mm] = h.remind_time.split(':').map(Number);
+    const at = new Date(); at.setHours(hh ?? 9, mm ?? 0, 0, 0);
+    if (at.getTime() <= Date.now()) at.setDate(at.getDate() + 1);
+    return void native.scheduleReminder({ id: `habit:${h.id}`, title: `Habit: ${h.name}`, at: at.getTime(), repeat: 'daily' });
+  }
+}
 function rollRepeatingReminders() {
   for (const r of live(app.reminders)) {
     if (r.repeat === 'daily' && !r.done_at && Date.parse(r.fire_at) < Date.now() - 60_000) doneReminder(r);
   }
 }
 /** Re-arm every future alarm (idempotent) — after install, reboot or sync. */
-export async function rescheduleAll() { for (const r of upcomingReminders()) await scheduleNative(r); }
+export async function rescheduleAll() {
+  for (const r of upcomingReminders()) await scheduleNative(r);
+  for (const t of live(app.tasks)) if (t.due_time && !t.done_at) scheduleAlarm('tasks', t);
+  for (const h of live(app.habits)) if (h.remind_time) scheduleAlarm('habits', h);
+}
 
 // ---------- quick add ----------
 export async function quickAdd(text: string, hint?: QuickResult['kind']): Promise<string> {
@@ -252,7 +289,7 @@ export async function sync() {
       else if (list[i]!.updated_at <= ch.row.updated_at) list[i] = ch.row as any;
       else continue;
       touched.add(ch.table);
-      if (ch.table === 'reminders') void scheduleNative(ch.row as Reminder);
+      scheduleAlarm(ch.table, ch.row);
     }
     cursor = data.cursor;
     await Promise.all([...touched].map(persist));
@@ -287,7 +324,7 @@ export async function loadHome() {
 export async function loadMatches() {
   if (!paired()) return;
   try {
-    const r = await request<NonNullable<typeof app.matchesFull>>(app.cfg.server, '/v1/matches', { token: app.cfg.token });
+    const r = await request<MatchesFull>(app.cfg.server, '/v1/matches', { token: app.cfg.token });
     if (r.data) app.matchesFull = r.data;
   } catch (e) { handleError(e); }
 }
@@ -295,8 +332,8 @@ export async function loadMatches() {
 export async function loadNews(cat: string) {
   if (!paired()) return;
   try {
-    const r = await request<{ items: NewsItem[] }>(app.cfg.server, `/v1/news?cat=${cat}`, { token: app.cfg.token });
-    if (r.data) app.news[cat] = r.data.items;
+    const r = await request<{ items: NewsItem[]; digest: { at: string; stories: Story[] } | null }>(app.cfg.server, `/v1/news?cat=${cat}`, { token: app.cfg.token });
+    if (r.data) { app.news[cat] = r.data.items; app.digest[cat] = r.data.digest; }
   } catch (e) { handleError(e); }
 }
 
@@ -375,4 +412,28 @@ export async function stopSleep() {
   await native.sleepStop();
   app.sleep = { endsAt: 0 };
   void kvSet('sleep', app.sleep);
+}
+
+// ---------- now playing ----------
+/** Polls the phone's media session while something needs it: every 2 s when playing, 8 s when paused/idle. */
+export function startMediaLoop() {
+  let stop = false, t: ReturnType<typeof setTimeout>;
+  const tick = async () => {
+    if (stop) return;
+    if (!document.hidden) {
+      const prev = app.media;
+      const m = await native.media(prev?.key);
+      if (m) app.media = { ...m, art: m.art ?? (m.key && m.key === prev?.key ? prev?.art : undefined), at: Date.now() };
+      else app.media = null;
+    }
+    if (!stop) t = setTimeout(tick, app.media?.playing ? 2000 : 8000);
+  };
+  void tick();
+  return () => { stop = true; clearTimeout(t); };
+}
+export async function mediaControl(action: 'toggle' | 'next' | 'prev' | 'seek', pos = 0) {
+  if (app.media && action === 'toggle') app.media = { ...app.media, playing: !app.media.playing, at: Date.now() }; // instant feedback
+  native.vibrate(8);
+  await native.mediaControl(action, pos);
+  setTimeout(async () => { const m = await native.media(app.media?.key); if (m) app.media = { ...m, art: m.art ?? app.media?.art, at: Date.now() }; }, 350);
 }

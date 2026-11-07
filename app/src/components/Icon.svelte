@@ -16,6 +16,14 @@
     refresh: 'M6 4h10v2h2v2h2v4h-2v-2h-2V8h-2V6H8v2H6v8h2v2h6v-2h2v4H6v-2H4V6h2z',
     trash: 'M9 2h6v2h5v2H4V4h5zM6 8h12v12h-2v2H8v-2H6zm4 2v8h1v-8zm3 0v8h1v-8z',
     back: 'M10 5h2v2h-2v2H8v2h12v2H8v2h2v2h2v2h-2v-2H8v-2H6v-2H4v-2h2V9h2V7h2z',
+    music: 'M10 3h10v14h-2v2h-4v-2h-2v-2h2v-2h4V7h-6v10h-2v2H6v-2H4v-2h2v-2h4z',
+    play: 'M7 4h3v2h2v2h2v2h2v4h-2v2h-2v2h-2v2H7z',
+    pause: 'M6 4h4v16H6zm8 0h4v16h-4z',
+    prev: 'M5 5h2v14H5zm12 0h2v14h-2v-2h-2v-2h-2v-2h-2v-2h2V9h2V7h2z',
+    next: 'M17 5h2v14h-2zM5 5h2v2h2v2h2v2h2v2h-2v2H9v2H7v2H5z',
+    clock: 'M8 2h8v2h2v2h2v12h-2v2h-2v2H8v-2H6v-2H4V6h2V4h2zm0 4v2H6v8h2v2h8v-2h2V8h-2V6zm3 1h2v5h3v2h-5z',
+    cal: 'M7 2h2v2h6V2h2v2h3v16H4V4h3zM6 8v10h12V8zm2 2h3v3H8z',
+    sparkle: 'M11 2h2v5h2v2h5v2h-5v2h-2v5h-2v-5H9v-2H4V9h5V7h2z',
   };
   let { name, size = 20 }: { name: keyof typeof P | string; size?: number } = $props();
 </script>

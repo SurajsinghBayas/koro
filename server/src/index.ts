@@ -7,7 +7,8 @@ import { migrate, openDb } from './db.ts';
 import { aiEnabled, env } from './env.ts';
 import { apiRoutes } from './routes/api.ts';
 import { syncRoutes } from './routes/sync.ts';
-import { startCricket } from './services/cricket/engine.ts';
+import { __state as cricketState, startCricket } from './services/cricket/engine.ts';
+import { refreshHistory } from './services/cricket/history.ts';
 import { refreshNews } from './services/news.ts';
 import { pushEnabled } from './services/push.ts';
 
@@ -45,6 +46,9 @@ if (env.JOBS) {
   setTimeout(news, 1_000);
   setInterval(news, 30 * 60_000);
   startCricket(db);
+  const history = () => refreshHistory(false, cricketState.recent);
+  setTimeout(history, 20_000);
+  setInterval(history, 30 * 60_000);
 }
 
 const server = Bun.serve({ port: env.PORT, hostname: env.HOST, fetch: app.fetch, idleTimeout: 30 });

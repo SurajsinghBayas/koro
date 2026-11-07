@@ -1,14 +1,10 @@
-import { isNative } from './native.ts';
-
 /**
- * HTTP client. On the phone requests go through tauri-plugin-http (Rust, rustls): no CORS, and plain
- * http:// works for testing against your Mac on Wi-Fi. In the browser it's normal fetch.
+ * HTTP client: the WebView's own fetch on the phone and in the browser. The server sends CORS headers,
+ * and the Android build allows cleartext so http:// works for Wi-Fi / USB testing against the Mac.
+ * (tauri-plugin-http hung on Android until our timeout aborted it, so it is no longer used.)
  */
-let httpFetch: typeof fetch | null = null;
 async function getFetch(): Promise<typeof fetch> {
-  if (httpFetch) return httpFetch;
-  httpFetch = isNative ? ((await import('@tauri-apps/plugin-http')).fetch as typeof fetch) : fetch.bind(window);
-  return httpFetch;
+  return fetch.bind(window);
 }
 
 export class ApiError extends Error {
@@ -37,7 +33,8 @@ export async function request<T>(server: string, path: string, opts: { method?: 
     return { data: data as T, etag: res.headers.get('etag') ?? undefined, notModified: false };
   } catch (e) {
     if (e instanceof ApiError) throw e;
-    throw new ApiError(0, (e as Error)?.name === 'AbortError' ? 'Server not reachable (timeout)' : `Server not reachable: ${(e as Error)?.message ?? e}`);
+    const err = e as Error;
+    throw new ApiError(0, err?.name === 'AbortError' ? 'Server not reachable (timed out after 15 s)' : `Server not reachable: ${err?.name ?? ''} ${err?.message ?? e}`);
   } finally {
     clearTimeout(timer);
   }

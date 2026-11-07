@@ -45,6 +45,14 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check
       - run: bunx tauri android init --ci
+      - name: Allow http:// (LAN / USB testing against the Mac)
+        run: |
+          set -euo pipefail
+          F=src-tauri/gen/android/app/build.gradle.kts
+          grep -n 'usesCleartextTraffic' "$F"
+          sed -i 's/manifestPlaceholders\["usesCleartextTraffic"\] = "false"/manifestPlaceholders["usesCleartextTraffic"] = "true"/' "$F"
+          grep -q 'usesCleartextTraffic"\] = "false"' "$F" && { echo "::error::cleartext still disabled"; exit 1; } || true
+          grep -q 'usesCleartextTraffic"\] = "true"' "$F" || { echo "::error::usesCleartextTraffic placeholder not found"; exit 1; }
       - run: bun run android:build
 
       - name: Sign APK

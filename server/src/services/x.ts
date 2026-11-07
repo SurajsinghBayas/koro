@@ -25,13 +25,16 @@ export const getX = () => state;
 const num = (v: unknown) => (typeof v === 'number' ? v : Number(String(v ?? '0').replace(/[^\d.]/g, '')) || 0);
 const isHttps = (u: unknown): u is string => typeof u === 'string' && /^https:\/\//.test(u);
 
+/** Media lists arrive as arrays, comma strings, or a Python-style "['https://…']" string. */
+const urlList = (v: unknown): string[] =>
+  (Array.isArray(v) ? v.filter(isHttps) : typeof v === 'string' ? v.match(/https:\/\/[^\s'",\]]+/g) ?? [] : []);
+
 /** OpenCLI tweet row → XPost. Exported for tests. */
 export function normalize(raw: Record<string, any>): XPost | null {
   const id = String(raw.id ?? raw.rest_id ?? '').trim();
   const author = String(raw.author ?? raw.screen_name ?? '').replace(/^@/, '');
   if (!/^\d+$/.test(id) || !author) return null;
-  const urls: string[] = (Array.isArray(raw.media_urls) ? raw.media_urls : typeof raw.media_urls === 'string' ? raw.media_urls.split(/[,\s]+/) : []).filter(isHttps);
-  const posters: string[] = (Array.isArray(raw.media_posters) ? raw.media_posters : typeof raw.media_posters === 'string' ? raw.media_posters.split(/[,\s]+/) : []).filter(isHttps);
+  const urls = urlList(raw.media_urls), posters = urlList(raw.media_posters);
   const media: XMedia[] = urls.slice(0, 4).map((u, i) => {
     const video = /video\.twimg\.com|\.mp4(\?|$)|\.m3u8(\?|$)/.test(u);
     return video ? { type: 'video', url: u, poster: posters[i] ?? posters[0] } : { type: 'photo', url: u };
@@ -62,7 +65,9 @@ export const score = (p: XPost, now = Date.now()) =>
 
 export function ingest(body: { feed?: unknown[]; cricket?: unknown[] }) {
   const norm = (arr: unknown[] | undefined) => (arr ?? []).map((r) => (r && typeof r === 'object' ? normalize(r as Record<string, any>) : null)).filter((p): p is XPost => !!p);
-  const feed = norm(body.feed), cricket = norm(body.cricket);
+  const isRt = (p: XPost) => /^RT @\w+:/.test(p.text);
+  // retweets carry no counts of their own and repeat other people's posts: skip them
+  const feed = norm(body.feed).filter((p) => !isRt(p)), cricket = norm(body.cricket).filter((p) => !isRt(p));
   if (feed.length) state.feed = merge(state.feed, feed, 60, (a, b) => score(b) - score(a));
   if (cricket.length) state.cricket = merge(state.cricket, cricket, 80, newest);
   state.at = new Date().toISOString();

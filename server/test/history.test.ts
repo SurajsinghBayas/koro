@@ -65,6 +65,16 @@ describe('x posts', () => {
   });
   test('rejects rows without a numeric id or author, drops http media', () => {
     expect(normalize({ id: 'abc', author: 'x' })).toBeNull();
+  });
+  test('normalize: Agent-Reach string-encoded fields', () => {
+    const p = normalize({ id: '2119124200497811804', author: 'mufaddal_vohra', text: 'Parag stays captain https://t.co/5RcKRhWIDe', likes: '3945', views: '72026',
+      created_at: 'Sat Nov 07 17:45:55 +0000 2026', media_urls: "['https://pbs.twimg.com/media/A.jpg', 'https://video.twimg.com/v/B.mp4']",
+      media_posters: "['https://pbs.twimg.com/media/A.jpg', 'https://pbs.twimg.com/p/B.jpg']", quoted_tweet: 'None' })!;
+    expect(p.likes).toBe(3945);
+    expect(p.text).toBe('Parag stays captain');
+    expect(p.createdAt).toBe('2026-11-07T17:45:55.000Z');
+    expect(p.media).toEqual([{ type: 'photo', url: 'https://pbs.twimg.com/media/A.jpg' }, { type: 'video', url: 'https://video.twimg.com/v/B.mp4', poster: 'https://pbs.twimg.com/p/B.jpg' }]);
+    expect(p.quoted).toBeUndefined();
     expect(normalize({ id: '1', author: 'a', media_urls: ['http://insecure/a.jpg'] })!.media).toEqual([]);
   });
   test('engagement score decays with age', () => {

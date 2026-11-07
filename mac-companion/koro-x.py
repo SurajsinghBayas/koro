@@ -72,7 +72,8 @@ def user_tweets(handle, limit):
         if err.get("code") in STOP_CODES:
             raise Stop(f"{err.get('code')}: {err.get('message')}")
         raise RuntimeError(f"@{handle}: {err.get('code')} {err.get('message')}")
-    return [it.get("raw") or {} for it in (d.get("result") or {}).get("items", [])]
+    items = d.get("items") or (d.get("result") or {}).get("items") or []
+    return [it.get("raw") or {} for it in items if isinstance(it, dict)]
 
 
 def following_top(scan, top):

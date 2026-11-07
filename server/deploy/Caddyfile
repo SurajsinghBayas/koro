@@ -1,0 +1,10 @@
+# Automatic HTTPS (Let's Encrypt). No domain? Use your Elastic IP with sslip.io:
+#   DOMAIN=api.13-201-5-9.sslip.io   (dots in the IP become dashes)
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy api:8787
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}

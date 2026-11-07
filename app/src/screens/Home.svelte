@@ -1,0 +1,233 @@
+<script lang="ts">
+  import Icon from '../components/Icon.svelte';
+  import MatchRow from '../components/MatchRow.svelte';
+  import Odo from '../components/Odo.svelte';
+  import { openUrl } from '../lib/open.ts';
+  import {
+    app, doneReminder, groceryOpen, habits, quickAdd, refreshAll, startFocus, startSleep, stopFocus, stopSleep,
+    streak, toast, todayTasks, toggleGrocery, toggleHabit, toggleTask, doneOn, upcomingReminders, paired,
+  } from '../lib/store.svelte.ts';
+  import { ago, fmtWhen, greeting } from '../lib/util.ts';
+
+  let { onDesk }: { onDesk: () => void } = $props();
+
+  let text = $state('');
+  let busy = $state(false);
+  let newsCat = $state<'tech' | 'india' | 'world' | 'cricket'>('tech');
+  let now = $state(Date.now());
+
+  // one ticker for the whole screen: 1 s only while a timer is running, else once a minute
+  $effect(() => {
+    const fast = app.focus.endsAt > now || app.sleep.endsAt > now;
+    const t = setTimeout(() => (now = Date.now()), fast ? 1000 : 60_000 - (Date.now() % 60_000));
+    return () => clearTimeout(t);
+  });
+
+  const mmss = (ms: number) => {
+    const s = Math.max(0, Math.round(ms / 1000));
+    return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  };
+
+  async function add(hint?: 'task' | 'reminder' | 'grocery' | 'habit') {
+    if (!text.trim() || busy) return;
+    busy = true;
+    const msg = await quickAdd(text, hint);
+    busy = false;
+    text = '';
+    if (msg) toast(msg);
+  }
+
+  const tasks = $derived(todayTasks());
+  const doneCount = $derived(tasks.filter((t) => t.done_at).length);
+  const reminders = $derived(upcomingReminders().slice(0, 3));
+  const matches = $derived(app.home?.matches);
+  const matchList = $derived(matches ? [...matches.live, ...matches.upcoming.slice(0, 2), ...matches.recent.slice(0, 1)].slice(0, 4) : []);
+  const xOver = $derived(app.screenTime !== null && app.screenTime > app.prefs.xLimit);
+  const focusLeft = $derived(app.focus.endsAt - now);
+  const sleepLeft = $derived(app.sleep.endsAt - now);
+  const date = $derived(new Date(now).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' }));
+</script>
+
+<main class="app stack page-enter">
+  <header class="head">
+    <div>
+      <div class="label">{date}</div>
+      <h1>{greeting(new Date(now).getHours())}</h1>
+    </div>
+    <div class="row" style="gap:8px">
+      <button class="icon-btn" onclick={onDesk} aria-label="Desk mode"><Icon name="desk" /></button>
+      <button class="icon-btn" onclick={() => (app.tab = 'settings')} aria-label="Settings"><Icon name="gear" /></button>
+    </div>
+  </header>
+
+  {#if !paired()}
+    <button class="card banner" onclick={() => (app.tab = 'settings')}>
+      <b>Connect to your Koro server</b>
+      <span class="muted">Lists work offline now. Pair in Settings to get matches, news, sync and alerts.</span>
+    </button>
+  {:else if app.status.error && !app.status.online}
+    <div class="card banner warn"><b>Offline</b><span class="muted">{app.status.error} · showing saved data</span></div>
+  {/if}
+
+  {#if app.home?.brief}
+    <section class="card card--hero brief">
+      <div class="card__title"><span class="label">Today's brief</span><span class="label">AI · {ago(app.home.brief.at)}</span></div>
+      {#each app.home.brief.text.split('\n') as line}<p>{line}</p>{/each}
+    </section>
+  {/if}
+
+  <form class="stack" style="gap:8px" onsubmit={(e) => { e.preventDefault(); add(); }}>
+    <input class="input" bind:value={text} placeholder="Add: milk · 6pm call mom · finish deck" enterkeyhint="done" disabled={busy} />
+    <div class="chips">
+      <button type="button" class="chip" onclick={() => add('task')}>Task</button>
+      <button type="button" class="chip" onclick={() => add('reminder')}>Reminder</button>
+      <button type="button" class="chip" onclick={() => add('grocery')}>Grocery</button>
+      <button type="button" class="chip" onclick={() => { text = text ? `${text} in 30 min` : ''; add('reminder'); }}>In 30 min</button>
+      <button type="button" class="chip" onclick={() => { text = text ? `${text} tonight` : ''; add('reminder'); }}>Tonight</button>
+    </div>
+  </form>
+
+  {#if matchList.length}
+    <section class="card" id="matchCard">
+      <div class="card__title"><h3>Matches</h3><button class="label linkish" onclick={() => (app.tab = 'matches')}>MI · India ›</button></div>
+      {#each matchList as m (m.id)}<MatchRow {m} />{/each}
+    </section>
+  {/if}
+
+  <section class="card">
+    <div class="card__title"><h3>Today</h3><span class="label">{doneCount} / {tasks.length}</span></div>
+    {#if tasks.length === 0}<p class="muted">Nothing due. Add something above.</p>{/if}
+    <div class="list">
+      {#each tasks.slice(0, 6) as t (t.id)}
+        <label class="list-row" class:is-done={!!t.done_at}>
+          <input type="checkbox" class="check" checked={!!t.done_at} onchange={() => toggleTask(t)} />
+          <span class="list-row__text">{t.title}</span>
+        </label>
+      {/each}
+    </div>
+    {#if tasks.length > 6}<button class="label linkish mt-2" onclick={() => (app.tab = 'lists')}>{tasks.length - 6} more ›</button>{/if}
+  </section>
+
+  {#if reminders.length}
+    <section class="card">
+      <div class="card__title"><h3>Reminders</h3></div>
+      <div class="list">
+        {#each reminders as r (r.id)}
+          <div class="list-row">
+            <span class="num sky-text when">{fmtWhen(r.fire_at)}</span>
+            <span class="grow">{r.title}{#if r.repeat === 'daily'} <span class="muted">· daily</span>{/if}</span>
+            <button class="mini" onclick={() => doneReminder(r)} aria-label="Done"><Icon name="x" size={16} /></button>
+          </div>
+        {/each}
+      </div>
+    </section>
+  {/if}
+
+  <div class="grid-2">
+    <button class="card tile" class:is-running={focusLeft > 0} onclick={() => (focusLeft > 0 ? stopFocus() : startFocus())}>
+      <span class="label">Focus</span>
+      <span class="tile__time display-pixel">{focusLeft > 0 ? mmss(focusLeft) : `${app.prefs.focusMin}:00`}</span>
+      <span class="hint">{focusLeft > 0 ? 'Tap to stop' : 'Tap to start · DND on'}</span>
+    </button>
+    <button class="card tile" class:is-running={sleepLeft > 0} onclick={() => (sleepLeft > 0 ? stopSleep() : startSleep())}>
+      <span class="label">Sleep timer</span>
+      <span class="tile__time display-pixel">{sleepLeft > 0 ? mmss(sleepLeft) : `${app.prefs.sleepMin}m`}</span>
+      <span class="hint">{sleepLeft > 0 ? 'Music stops at 0 · tap to cancel' : 'Tap to start'}</span>
+    </button>
+  </div>
+
+  <section class="card">
+    <div class="card__title"><h3>Habits</h3><button class="label linkish" onclick={() => (app.tab = 'lists')}>Edit ›</button></div>
+    {#each habits() as h (h.id)}
+      <label class="habit">
+        <input type="checkbox" class="check" checked={doneOn(h)} onchange={() => toggleHabit(h)} />
+        <span>{h.name}</span>
+        <span class="streak">{streak(h)} {streak(h) === 1 ? 'day' : 'days'}</span>
+      </label>
+    {:else}
+      <p class="muted">No habits yet. Try “read 20 pages daily”.</p>
+    {/each}
+    {#if app.screenTime !== null}
+      <div class="xrow">
+        <div class="row between"><span>X today</span><span class="num" style:color={xOver ? 'var(--danger)' : 'var(--text-2)'}>{app.screenTime} / {app.prefs.xLimit} min</span></div>
+        <div class="meter" class:meter--low={xOver}><span style="--value:{Math.min(1, app.screenTime / app.prefs.xLimit)}"></span></div>
+      </div>
+    {/if}
+  </section>
+
+  {#if app.home?.devices?.length || app.battery}
+    <section class="card stack">
+      <div class="card__title" style="margin:0"><h3>Devices</h3></div>
+      {#each app.home?.devices ?? [] as d (d.id)}
+        {@const mine = d.id === app.cfg.deviceId}
+        {@const pct = mine && app.battery ? app.battery.pct : d.battery_pct}
+        {@const chg = mine && app.battery ? app.battery.charging : d.charging}
+        {#if pct !== null}
+          <div>
+            <div class="row between"><span>{d.name}</span><span class="num"><Odo value={pct} />%{chg ? ' · charging' : ''}</span></div>
+            <div class="meter mt-2" class:meter--gold={d.kind === 'mac'} class:meter--low={pct < 20 && !chg}><span style="--value:{pct / 100}"></span></div>
+            {#if !mine}<div class="hint">{ago(d.battery_at)}</div>{/if}
+          </div>
+        {/if}
+      {/each}
+    </section>
+  {/if}
+
+  {#if app.home?.news}
+    <section class="card">
+      <div class="card__title"><h3>Headlines</h3><button class="label linkish" onclick={() => (app.tab = 'news')}>More ›</button></div>
+      <div class="chips">
+        {#each ['tech', 'india', 'world', 'cricket'] as const as c}
+          <button class="chip" aria-pressed={newsCat === c} onclick={() => (newsCat = c)}>{c[0]!.toUpperCase() + c.slice(1)}</button>
+        {/each}
+      </div>
+      <div class="mt-2">
+        {#each (app.home.news[newsCat] ?? []).slice(0, 4) as n (n.id)}
+          <button class="news-item" onclick={() => openUrl(n.url)}><b>{n.title}</b><span>{n.source} · {ago(n.publishedAt)}</span></button>
+        {/each}
+      </div>
+    </section>
+  {/if}
+
+  <section class="card">
+    <div class="card__title"><h3>Grocery</h3><span class="label">{groceryOpen().length} items</span></div>
+    <div class="chips wrap">
+      {#each groceryOpen() as g (g.id)}
+        <button class="chip" onclick={() => toggleGrocery(g)}>{g.name}</button>
+      {:else}
+        <span class="muted">List is empty. Type “milk, eggs” above.</span>
+      {/each}
+    </div>
+  </section>
+
+  {#if paired()}
+    <button class="sync-line" onclick={() => refreshAll()}>
+      <Icon name="refresh" size={14} /> {app.status.syncing ? 'Syncing…' : `Synced ${ago(app.status.lastSync || null)}`}
+    </button>
+  {/if}
+</main>
+
+<style>
+  .head { display: flex; justify-content: space-between; align-items: flex-start; padding-top: var(--s2); }
+  .banner { display: flex; flex-direction: column; gap: 4px; text-align: left; }
+  .banner.warn { box-shadow: inset 0 0 0 1px var(--gold-soft); }
+  .brief p { line-height: 1.45; }
+  .brief p + p { margin-top: 6px; }
+  .linkish { background: none; color: var(--accent-text); }
+  .when { min-width: 64px; font-size: var(--fs-sm); }
+  .grow { flex: 1; }
+  .mini { width: 32px; height: 32px; display: grid; place-items: center; color: var(--text-3); }
+  .tile { display: flex; flex-direction: column; gap: var(--s2); text-align: left; }
+  .tile__time { font-size: 1.75rem; line-height: 1; }
+  .tile.is-running { box-shadow: inset 0 0 0 var(--px) var(--accent); }
+  .hint { font-size: var(--fs-xs); color: var(--text-3); }
+  .habit { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: var(--s3); min-height: 48px; }
+  .streak { font-size: var(--fs-sm); font-weight: 650; color: var(--gold-text); }
+  .xrow { display: flex; flex-direction: column; gap: 6px; margin-top: var(--s2); }
+  .news-item { display: block; width: 100%; text-align: left; padding: var(--s3) 0; border-bottom: 1px solid var(--line); }
+  .news-item:last-child { border-bottom: 0; padding-bottom: 0; }
+  .news-item b { display: block; font-weight: 600; line-height: 1.35; }
+  .news-item span { font-size: var(--fs-xs); color: var(--text-3); }
+  .chips.wrap { flex-wrap: wrap; }
+  .sync-line { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-3); padding: var(--s2); }
+</style>

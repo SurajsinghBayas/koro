@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Koro Home</title>
+<!-- preview only: the real app bundles these fonts locally -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..800&family=Pixelify+Sans:wght@400..700&display=swap">
+<link rel="stylesheet" href="src/styles/theme.css">
+<style>
+  body { max-width: 430px; margin: 0 auto; overflow-x: hidden; }
+
+  .head { display: flex; justify-content: space-between; align-items: flex-start; padding-top: var(--s2); }
+  .icon-btn { width: 40px; height: 40px; display: grid; place-items: center; color: var(--text);
+              background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--line); border-radius: 12px; }
+  .icon-btn svg { width: 20px; height: 20px; }
+  .icon-btn:active { transform: scale(.94); }
+
+  /* live pill: slides in when the match card scrolls away (CSS scroll timeline, zero JS) */
+  .pill { position: fixed; top: calc(var(--safe-top) + 10px); left: 50%; z-index: 30;
+          display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px 0 12px;
+          background: var(--chrome); color: var(--text); border-radius: 999px;
+          box-shadow: inset 0 0 0 1px var(--line-strong), 0 4px 14px var(--elev);
+          font: 700 13px var(--font-body); font-variant-numeric: tabular-nums; transform: translate(-50%, -70px); }
+  .pill .dot { width: 8px; height: 8px; background: var(--danger); }
+  @supports (animation-timeline: scroll()) {
+    .pill { animation: pill-in linear both; animation-timeline: scroll(root); animation-range: 260px 320px; }
+    @keyframes pill-in { to { transform: translate(-50%, 0); } }
+  }
+  .pill.js-show { transform: translate(-50%, 0); transition: transform var(--t-med) var(--ease-spring); }
+
+  /* rolling digits */
+  .odo { display: inline-flex; overflow: hidden; height: 1em; line-height: 1; }
+  .odo__d { display: flex; flex-direction: column; transition: transform 700ms var(--ease-spring); }
+  .odo__d span { height: 1em; }
+
+  /* matches */
+  .match { display: grid; grid-template-columns: 1fr auto; gap: 2px var(--s3); padding: var(--s3) 0; border-bottom: 1px solid var(--line); }
+  .match:last-child { border-bottom: 0; padding-bottom: 0; }
+  .match__teams { font-weight: 650; }
+  .match__meta { font-size: var(--fs-sm); color: var(--text-3); }
+  .match__score { font-size: 1.5rem; line-height: 1; text-align: right; }
+  .match__right { text-align: right; font-size: var(--fs-sm); color: var(--text-2); }
+
+  /* habits */
+  .habit { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: var(--s3); min-height: 48px; }
+  .week { display: flex; gap: 3px; }
+  .week i { width: 8px; height: 8px; background: var(--surface-3); }
+  .week i.on { background: var(--accent); }
+  .streak { font-size: var(--fs-sm); font-weight: 650; color: var(--gold-text); }
+
+  /* tiles */
+  .tile { display: flex; flex-direction: column; gap: var(--s2); text-align: left; }
+  .tile__time { font-size: 1.75rem; line-height: 1; }
+  .tile.is-running { box-shadow: inset 0 0 0 var(--px) var(--accent); }
+
+  /* news */
+  .news-item { display: block; padding: var(--s3) 0; border-bottom: 1px solid var(--line); color: var(--text); text-decoration: none; }
+  .news-item:last-child { border-bottom: 0; padding-bottom: 0; }
+  .news-item b { display: block; font-weight: 600; line-height: 1.35; }
+  .news-item span { font-size: var(--fs-xs); color: var(--text-3); }
+
+  /* desk mode */
+  .deskview { display: none; }
+  .deskview.is-on { display: grid; }
+  .flaps { display: flex; gap: 8px; align-items: center; }
+  .flap { position: relative; width: 1.15ch; height: 1.4em; font: 700 clamp(3.5rem, 18vw, 8rem)/1.4 var(--font-pixel);
+          background: #0B0F18; color: var(--silver-100); text-align: center; }
+  .flap::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: #000; }
+  .flap.flip { animation: flip 420ms steps(6) 1; }
+  @keyframes flip { 50% { transform: rotateX(-90deg); } }
+  .colon { font: 700 clamp(3rem, 14vw, 6rem) var(--font-pixel); color: var(--gold); }
+
+  #dissolve { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 90; pointer-events: none; image-rendering: pixelated; display: none; }
+</style>
+</head>
+<body>
+
+<div class="pill" id="pill"><span class="dot"></span>MI <span id="pillScore">187/4</span> · 17.2 ov</div>
+
+<main class="app stack" id="home">
+  <!-- header: plain surface, tokens only → correct contrast in both themes -->
+  <header class="head">
+    <div>
+      <div class="label" id="date">—</div>
+      <h1 id="greet">Good evening</h1>
+    </div>
+    <div class="row" style="gap:8px">
+      <button class="icon-btn" id="toDesk" aria-label="Desk mode">
+        <svg viewBox="0 0 24 24" class="icon"><path fill="currentColor" d="M4 5h16v11H4zm2 2v7h12V7zM9 18h6v2H9z"/></svg>
+      </button>
+      <button class="icon-btn" id="themeBtn" aria-label="Theme: auto">
+        <svg viewBox="0 0 24 24" class="icon"><path fill="currentColor" d="M10 2h4v2h2v2h2v2h2v8h-2v2h-2v2h-2v2h-4v-2H8v-2H6v-2H4V8h2V6h2V4h2zm2 4v12h2v-2h2v-2h2V8h-2V6z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- quick add -->
+  <section class="stack" style="gap:8px">
+    <input class="input" placeholder="Add: milk · 6pm call mom · finish deck">
+    <div class="chips">
+      <button class="chip" aria-pressed="true">Task</button>
+      <button class="chip">Reminder</button>
+      <button class="chip">Grocery</button>
+      <button class="chip">In 30 min</button>
+      <button class="chip">Tonight</button>
+    </div>
+  </section>
+
+  <!-- matches: MI + India -->
+  <section class="card" id="matchCard">
+    <div class="card__title"><h3>Matches</h3><span class="label">MI · India</span></div>
+    <div class="match">
+      <div>
+        <div class="match__teams">MI <span class="muted">vs</span> CSK</div>
+        <div class="match__meta"><span class="badge badge--live">Live</span>&nbsp; IPL · 17.2 ov · Rohit 92*</div>
+      </div>
+      <div class="match__score display-pixel"><span class="odo" id="runs"></span>/<span class="odo" id="wkts"></span></div>
+    </div>
+    <div class="match">
+      <div>
+        <div class="match__teams">India <span class="muted">vs</span> Australia</div>
+        <div class="match__meta">2nd ODI · Adelaide</div>
+      </div>
+      <div class="match__right">Tomorrow<br><b class="sky-text">09:00</b></div>
+    </div>
+    <div class="match">
+      <div>
+        <div class="match__teams">India <span class="muted">vs</span> South Africa</div>
+        <div class="match__meta">1st Test · Result</div>
+      </div>
+      <div class="match__right"><b class="gold-text">IND won</b><br>by 7 wkts</div>
+    </div>
+  </section>
+
+  <!-- tasks -->
+  <section class="card">
+    <div class="card__title"><h3>Today</h3><span class="label" id="taskCount">1 / 3</span></div>
+    <div class="list">
+      <label class="list-row is-done"><input type="checkbox" class="check task" checked><span class="list-row__text">Gym, 45 min</span></label>
+      <label class="list-row"><input type="checkbox" class="check task"><span class="list-row__text">Finish Koro backend plan</span></label>
+      <label class="list-row"><input type="checkbox" class="check task"><span class="list-row__text">Pay electricity bill</span></label>
+    </div>
+  </section>
+
+  <!-- reminders -->
+  <section class="card">
+    <div class="card__title"><h3>Reminders</h3></div>
+    <div class="list">
+      <div class="list-row"><span class="num sky-text" style="width:52px">18:00</span><span>Call mom</span></div>
+      <div class="list-row"><span class="num sky-text" style="width:52px">21:30</span><span>Take vitamins</span></div>
+    </div>
+  </section>
+
+  <!-- focus + sleep -->
+  <div class="grid-2">
+    <button class="card tile" id="focus">
+      <span class="label">Focus</span>
+      <span class="tile__time display-pixel" id="focusTime">25:00</span>
+      <span class="muted" style="font-size:var(--fs-sm)" id="focusHint">Tap to start · DND on</span>
+    </button>
+    <button class="card tile" id="sleep">
+      <span class="label">Sleep timer</span>
+      <span class="tile__time display-pixel" id="sleepTime">30m</span>
+      <span class="muted" style="font-size:var(--fs-sm)">Tap to change</span>
+    </button>
+  </div>
+
+  <!-- habits + screen time -->
+  <section class="card">
+    <div class="card__title"><h3>Habits</h3></div>
+    <label class="habit"><input type="checkbox" class="check habitc"><span>Read 20 pages</span><span class="streak">6 days</span></label>
+    <label class="habit"><input type="checkbox" class="check habitc"><span>No phone after 11pm</span><span class="streak">2 days</span></label>
+    <div class="list-row" style="border:0;flex-direction:column;align-items:stretch;gap:6px;margin-top:4px">
+      <div class="row between"><span>X / Twitter today</span><span class="num" style="color:var(--danger)">47 / 30 min</span></div>
+      <div class="meter meter--low"><span style="--value:1"></span></div>
+    </div>
+  </section>
+
+  <!-- devices -->
+  <section class="card stack">
+    <div class="card__title" style="margin:0"><h3>Devices</h3><span class="label">Updated 2 min ago</span></div>
+    <div class="row between"><span>Galaxy S25</span><span class="num"><span class="odo" id="b1"></span>% · charging</span></div>
+    <div class="meter"><span id="b1bar" style="--value:0"></span></div>
+    <div class="row between"><span>MacBook Air M2</span><span class="num"><span class="odo" id="b2"></span>%</span></div>
+    <div class="meter meter--gold"><span id="b2bar" style="--value:0"></span></div>
+  </section>
+
+  <!-- news -->
+  <section class="card">
+    <div class="card__title"><h3>Headlines</h3></div>
+    <div class="chips"><button class="chip" aria-pressed="true">Tech</button><button class="chip">India</button><button class="chip">World</button><button class="chip">Cricket</button></div>
+    <div class="mt-2">
+      <a class="news-item" href="#"><b>Samsung rolls out One UI update for Galaxy S25 series</b><span>The Verge · 1h</span></a>
+      <a class="news-item" href="#"><b>Rust 2026 edition: what changes for async</b><span>Hacker News · 3h</span></a>
+      <a class="news-item" href="#"><b>Apple's next MacBook Air rumoured for spring</b><span>9to5Mac · 5h</span></a>
+    </div>
+  </section>
+
+  <!-- grocery -->
+  <section class="card">
+    <div class="card__title"><h3>Grocery</h3><span class="label">4 items</span></div>
+    <div class="chips" style="flex-wrap:wrap">
+      <button class="chip">Milk</button><button class="chip">Eggs</button><button class="chip">Bread</button><button class="chip">Bananas</button>
+    </div>
+  </section>
+</main>
+
+<nav class="tabbar">
+  <a class="tab" aria-current="page"><svg viewBox="0 0 24 24" class="icon"><path fill="currentColor" d="M4 10h2V8h2V6h2V4h4v2h2v2h2v2h2v10H4z"/></svg>Home</a>
+  <a class="tab"><svg viewBox="0 0 24 24" class="icon"><path fill="currentColor" d="M10 4h4v2h2v12h-2v2h-4v-2H8V6h2z"/></svg>Matches</a>
+  <a class="tab"><svg viewBox="0 0 24 24" class="icon"><path fill="currentColor" d="M4 4h16v16H4zm2 2v4h12V6zm0 6v2h12v-2zm0 4v2h8v-2z"/></svg>News</a>
+  <a class="tab"><svg viewBox="0 0 24 24" class="icon"><path fill="currentColor" d="M4 4h2v2H4zm4 0h12v2H8zm-4 6h2v2H4zm4 0h12v2H8zm-4 6h2v2H4zm4 0h12v2H8z"/></svg>Lists</a>
+</nav>
+
+<!-- desk mode: clock + agenda, always black -->
+<section class="desk deskview" id="desk">
+  <div>
+    <div class="flaps" id="flaps"></div>
+    <div class="desk__date" id="deskDate"></div>
+  </div>
+  <div class="desk__agenda list">
+    <div class="list-row"><span class="num sky-text">18:00</span>&nbsp; Call mom</div>
+    <div class="list-row"><span class="num sky-text">19:30</span>&nbsp; MI vs CSK</div>
+    <div class="list-row"><span class="num gold-text">23:00</span>&nbsp; Sleep timer</div>
+    <button class="btn btn--ghost mt-4" id="toHome">← Back</button>
+  </div>
+</section>
+
+<canvas id="dissolve"></canvas>
+
+<script>
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const vibe = p => navigator.vibrate && navigator.vibrate(p);
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const B4 = [0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5].map(v => (v + .5) / 16);
+const bayer = (x, y) => B4[(y & 3) * 4 + (x & 3)];
+
+/* header */
+const now = new Date(), hr = now.getHours();
+$('#date').textContent = now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' });
+$('#greet').textContent = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
+
+/* rolling digits */
+function roll(el, value) {
+  const s = String(value);
+  while (el.children.length < s.length) {
+    const d = document.createElement('span'); d.className = 'odo__d';
+    d.innerHTML = Array.from({ length: 10 }, (_, n) => `<span>${n}</span>`).join('');
+    el.prepend(d);
+  }
+  while (el.children.length > s.length) el.firstChild.remove();
+  [...el.children].forEach((d, i) => d.style.transform = `translateY(${-s[i] * 10}%)`);
+}
+let runs = 187, wk = 4;
+roll($('#runs'), runs); roll($('#wkts'), wk);
+// demo: simulate a live score update every 6 s (real app: server push / 30 s poll while visible)
+const live = setInterval(() => {
+  if (document.hidden) return;
+  runs += [0, 1, 1, 2, 4, 6][Math.random() * 6 | 0]; roll($('#runs'), runs); $('#pillScore').textContent = `${runs}/${wk}`;
+}, 6000);
+
+/* pill fallback */
+if (!CSS.supports('animation-timeline: scroll()'))
+  new IntersectionObserver(([e]) => $('#pill').classList.toggle('js-show', !e.isIntersecting)).observe($('#matchCard'));
+
+/* tasks */
+const countTasks = () => $('#taskCount').textContent = `${$$('.task').filter(t => t.checked).length} / ${$$('.task').length}`;
+$$('.task').forEach(t => t.onchange = () => { t.closest('.list-row').classList.toggle('is-done', t.checked); vibe(t.checked ? [10, 30, 10] : 8); countTasks(); });
+$$('.habitc').forEach(h => h.onchange = () => vibe(h.checked ? [10, 30, 10] : 8));
+
+/* focus timer: ticks once per second only while visible */
+let focusEnd = 0, focusIv;
+$('#focus').onclick = () => {
+  if (focusEnd) { clearInterval(focusIv); focusEnd = 0; $('#focus').classList.remove('is-running'); $('#focusTime').textContent = '25:00'; $('#focusHint').textContent = 'Tap to start · DND on'; return; }
+  focusEnd = Date.now() + 25 * 60e3; $('#focus').classList.add('is-running'); $('#focusHint').textContent = 'Running · tap to stop'; vibe(15);
+  const tick = () => { const s = Math.max(0, Math.round((focusEnd - Date.now()) / 1000)); $('#focusTime').textContent = `${String(s / 60 | 0).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+  tick(); focusIv = setInterval(() => !document.hidden && tick(), 1000);
+};
+const SLEEP = ['15m', '30m', '45m', '60m', 'Off'];
+$('#sleep').onclick = () => { const t = $('#sleepTime'); t.textContent = SLEEP[(SLEEP.indexOf(t.textContent) + 1) % SLEEP.length]; vibe(8); };
+
+/* devices */
+setTimeout(() => { roll($('#b1'), 78); roll($('#b2'), 41); $('#b1bar').style.setProperty('--value', .78); $('#b2bar').style.setProperty('--value', .41); }, 300);
+
+/* pixel dissolve between views */
+function dissolve(swap, color = '#000') {
+  if (reduce) return swap();
+  const c = $('#dissolve'), ctx = c.getContext('2d'), C = 12, w = Math.ceil(innerWidth / C), h = Math.ceil(innerHeight / C);
+  c.width = w; c.height = h; c.style.display = 'block';
+  let i = 0, dir = 1; const steps = 8;
+  const iv = setInterval(() => {
+    i += dir; ctx.clearRect(0, 0, w, h); ctx.fillStyle = color;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (bayer(x, y) < i / steps) ctx.fillRect(x, y, 1, 1);
+    if (i === steps) { swap(); dir = -1; }
+    if (i === 0 && dir === -1) { clearInterval(iv); c.style.display = 'none'; }
+  }, 22);
+}
+
+/* desk mode: repaints once per minute */
+let deskTimer, last = '';
+function deskTick() {
+  const d = new Date(), digits = d.toTimeString().slice(0, 5).replace(':', ''), f = $('#flaps');
+  if (!f.children.length) f.innerHTML = '<div class="flap"></div><div class="flap"></div><span class="colon">:</span><div class="flap"></div><div class="flap"></div>';
+  f.querySelectorAll('.flap').forEach((el, i) => { if (last[i] !== digits[i]) { el.textContent = digits[i]; el.classList.remove('flip'); void el.offsetWidth; el.classList.add('flip'); } });
+  last = digits;
+  $('#deskDate').textContent = d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+  $('#desk').style.setProperty('--dx', `${(Math.random() * 4 - 2) | 0}px`);   // burn-in guard
+  $('#desk').style.setProperty('--dy', `${(Math.random() * 4 - 2) | 0}px`);
+  deskTimer = setTimeout(deskTick, 60000 - d.getSeconds() * 1000 - d.getMilliseconds());
+}
+$('#toDesk').onclick = () => dissolve(() => { $('#home').classList.add('hidden'); $('#pill').classList.add('hidden'); $('#desk').classList.add('is-on'); last = ''; deskTick(); });
+$('#toHome').onclick = () => dissolve(() => { clearTimeout(deskTimer); $('#desk').classList.remove('is-on'); $('#home').classList.remove('hidden'); $('#pill').classList.remove('hidden'); }, getComputedStyle(document.body).backgroundColor);
+document.addEventListener('visibilitychange', () => { if (document.hidden) clearTimeout(deskTimer); else if ($('#desk').classList.contains('is-on')) deskTick(); });
+
+/* theme: auto → light → dark */
+const html = document.documentElement, sysDark = matchMedia('(prefers-color-scheme: dark)'), MODES = ['auto', 'light', 'dark'];
+let mode = 'auto'; try { mode = localStorage.getItem('koro-theme') || 'auto'; } catch {}
+function applyTheme(m) {
+  mode = m;
+  if (m === 'auto') delete html.dataset.theme; else html.dataset.theme = m;
+  $('#themeBtn').setAttribute('aria-label', `Theme: ${m}`); $('#themeBtn').title = `Theme: ${m}`;
+  try { localStorage.setItem('koro-theme', m); } catch {}
+}
+$('#themeBtn').onclick = () => {
+  const next = MODES[(MODES.indexOf(mode) + 1) % 3], dark = next === 'dark' || (next === 'auto' && sysDark.matches);
+  vibe(10); dissolve(() => applyTheme(next), dark ? '#000' : '#F3F6FA');
+};
+applyTheme(mode);
+</script>
+</body>
+</html>

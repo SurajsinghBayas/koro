@@ -1,0 +1,32 @@
+# Runs on the EC2 instance. Usage (from the repo root on EC2):
+#   cp server/.env.example server/.env   # fill DATABASE_URL (Neon pooled), SETUP_CODE, keys
+#   DOMAIN=api.yourdomain.com docker compose -f server/deploy/docker-compose.yml up -d --build
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: server/Dockerfile
+    env_file: ../.env
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - koro-data:/data
+    restart: unless-stopped
+    mem_limit: 300m
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN, e.g. api.13-201-5-9.sslip.io}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [api]
+    restart: unless-stopped
+
+volumes:
+  koro-data:
+  caddy-data:

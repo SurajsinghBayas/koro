@@ -10,6 +10,10 @@ import { getNews, type NewsCat } from '../services/news.ts';
 import { notify, pushEnabled } from '../services/push.ts';
 import { onXIngest } from '../services/xnotify.ts';
 import { CRICKET_HANDLES, getX, ingest } from '../services/x.ts';
+import { clipToPhone, currentSeq, MAC_CMDS, macOnline, nextEvents, pushToMac, status as macStatus } from '../services/mac.ts';
+import { addSaved } from '../services/saved.ts';
+import { getWeather } from '../services/weather.ts';
+import { addChannel, getYt, pendingTranscripts, putTranscript, refreshYt, removeChannel } from '../services/yt.ts';
 
 type Env = { Variables: { device: Device } };
 
@@ -42,6 +46,7 @@ export function apiRoutes(db: Db) {
         digest: Object.fromEntries(Object.entries(news.digest ?? {}).map(([k, d]) => [k, d!.stories.slice(0, 3)])),
       },
       devices,
+      mac: { online: macOnline(), volume: macStatus.volume, muted: macStatus.muted },
       inbox,
       x: (() => { const x = getX(); return { at: x.at, digest: x.digest, feed: x.feed.slice(0, 3), cricket: x.cricket.slice(0, 3) }; })(),
       features: { ai: aiEnabled(), push: pushEnabled(), cricketDetail: Boolean(env.CRICKETDATA_API_KEY), sportmonks: Boolean(env.SPORTMONKS_API_TOKEN) },
@@ -126,6 +131,73 @@ export function apiRoutes(db: Db) {
   });
 
   r.post('/ai/brief/refresh', (c) => { maybeRefreshBrief(db, briefCtx, true); return c.json({ ok: true, queued: aiEnabled() }); });
+
+  // ---------- weather ----------
+  r.get('/weather', async (c) => {
+    const lat = Number(c.req.query('lat')), lon = Number(c.req.query('lon'));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return c.json({ error: 'lat and lon required' }, 400);
+    try { return c.json(await getWeather(lat, lon, env.TZ)); }
+    catch (e) { return c.json({ error: `Weather unavailable: ${(e as Error).message}` }, 502); }
+  });
+
+  // ---------- phone ⇄ Mac ----------
+  const isMac = (c: { get: (k: 'device') => Device }) => c.get('device').kind === 'mac';
+  /** Mac agent long-poll. `since=0` on start returns the current cursor without replaying old events. */
+  r.get('/mac/events', async (c) => {
+    if (!isMac(c)) return c.json({ error: 'Mac only' }, 403);
+    const since = Number(c.req.query('since') ?? 0) || 0;
+    const events = await nextEvents(since);
+    return c.json({ seq: events.length ? events[events.length - 1]!.seq : Math.max(since, currentSeq()), events });
+  });
+  r.post('/mac/status', async (c) => {
+    if (!isMac(c)) return c.json({ error: 'Mac only' }, 403);
+    const b = z.object({ volume: z.number().min(0).max(100).nullable().optional(), muted: z.boolean().nullable().optional() }).safeParse(await c.req.json().catch(() => null));
+    if (!b.success) return c.json({ error: 'volume/muted' }, 400);
+    Object.assign(macStatus, { volume: b.data.volume ?? null, muted: b.data.muted ?? null, at: Date.now() });
+    return c.json({ ok: true });
+  });
+  r.get('/mac/status', (c) => c.json({ online: macOnline(), volume: macStatus.volume, muted: macStatus.muted, at: macStatus.at || null }));
+  /** Phone → Mac: clipboard text, a link to open, or a command. */
+  r.post('/mac/send', async (c) => {
+    const b = z.union([
+      z.object({ type: z.literal('clip'), text: z.string().min(1).max(20_000) }),
+      z.object({ type: z.literal('link'), url: z.string().url().max(4000), title: z.string().max(300).optional() }),
+      z.object({ type: z.literal('cmd'), cmd: z.enum(MAC_CMDS), value: z.number().min(0).max(100).optional() }),
+    ]).safeParse(await c.req.json().catch(() => null));
+    if (!b.success) return c.json({ error: 'Invalid request' }, 400);
+    pushToMac(b.data);
+    return c.json({ ok: true, online: macOnline() });
+  });
+  /** Mac → phone clipboard / link. */
+  r.post('/clip', async (c) => {
+    const b = z.object({ text: z.string().min(1).max(20_000) }).safeParse(await c.req.json().catch(() => null));
+    if (!b.success) return c.json({ error: 'text required' }, 400);
+    return c.json(await clipToPhone(db, b.data.text));
+  });
+
+  // ---------- read later ----------
+  r.post('/saved', async (c) => {
+    const b = z.object({ url: z.string().url().max(4000), title: z.string().max(300).optional() }).safeParse(await c.req.json().catch(() => null));
+    if (!b.success) return c.json({ error: 'url required' }, 400);
+    return c.json({ ok: true, id: await addSaved(db, b.data.url, b.data.title) });
+  });
+
+  // ---------- YouTube ----------
+  r.get('/yt', (c) => c.json(getYt()));
+  r.post('/yt/channels', async (c) => {
+    const b = z.object({ input: z.string().min(2).max(300) }).safeParse(await c.req.json().catch(() => null));
+    if (!b.success) return c.json({ error: 'Paste a channel link or @handle' }, 400);
+    try { return c.json({ ok: true, channel: await addChannel(b.data.input) }); }
+    catch (e) { return c.json({ error: (e as Error).message }, 400); }
+  });
+  r.delete('/yt/channels/:id', (c) => { removeChannel(c.req.param('id')); return c.json({ ok: true }); });
+  r.post('/yt/refresh', async (c) => { await refreshYt(); return c.json(getYt()); });
+  r.get('/yt/pending', (c) => c.json({ videos: pendingTranscripts() }));
+  r.post('/yt/transcript', async (c) => {
+    const b = z.object({ id: z.string().regex(/^[\w-]{11}$/), text: z.string().max(400_000).nullable() }).safeParse(await c.req.json().catch(() => null));
+    if (!b.success) return c.json({ error: 'id and text required' }, 400);
+    return c.json({ ok: await putTranscript(b.data.id, b.data.text) });
+  });
 
   return r;
 }

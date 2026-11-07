@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="koro_w_surface">#F2FFFFFF</color>
+    <color name="koro_w_line">#1F0B1220</color>
+    <color name="koro_w_text">#FF0B1220</color>
+    <color name="koro_w_dim">#990B1220</color>
+    <color name="koro_w_accent">#FF0A6EBD</color>
+    <color name="koro_w_gold">#FFA87A12</color>
+    <string name="koro_w_desc_tasks">Koro to-do: tick tasks from your home screen</string>
+    <string name="koro_w_desc_habits">Koro habits: today\'s habits with streaks</string>
+    <string name="koro_w_desc_grocery">Koro grocery list</string>
+    <string name="koro_w_desc_music">Koro holo player: what\'s playing, with controls</string>
+</resources>

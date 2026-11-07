@@ -18,6 +18,8 @@ object Notifier {
     const val CH_GENERAL = "general"
     const val CH_X_BREAKING = "x_breaking" // breaking cricket posts from X
     const val CH_X_DIGEST = "x_digest"     // quiet 3-hourly X summary
+    const val CH_CLIP = "clipboard"        // quiet: "copied from your Mac"
+    const val CH_WATER = "water"           // water reminders with a "+1 glass" button
 
     fun channels(c: Context) {
         if (Build.VERSION.SDK_INT < 26) return
@@ -29,6 +31,8 @@ object Notifier {
             NotificationChannel(CH_GENERAL, "General", NotificationManager.IMPORTANCE_DEFAULT),
             NotificationChannel(CH_X_BREAKING, "X: breaking cricket", NotificationManager.IMPORTANCE_DEFAULT),
             NotificationChannel(CH_X_DIGEST, "X: summaries", NotificationManager.IMPORTANCE_LOW),
+            NotificationChannel(CH_CLIP, "Clipboard from Mac", NotificationManager.IMPORTANCE_LOW),
+            NotificationChannel(CH_WATER, "Water reminders", NotificationManager.IMPORTANCE_DEFAULT),
         ))
     }
 
@@ -77,6 +81,45 @@ object Notifier {
             b.setStyle(NotificationCompat.BigTextStyle().bigText(body))
         }
         try { NotificationManagerCompat.from(c).notify(id, b.build()) } catch (_: SecurityException) { }
+    }
+
+    private fun linkIntent(c: Context, id: Int, url: String?): PendingIntent? = url?.takeIf { it.startsWith("http") }?.let {
+        PendingIntent.getActivity(c, id, Intent(Intent.ACTION_VIEW, Uri.parse(it)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    }
+
+    /** Mac clipboard arrived (already copied on the phone). Links open on tap. */
+    fun clip(c: Context, title: String, body: String, url: String?) {
+        channels(c)
+        val n = NotificationCompat.Builder(c, CH_CLIP)
+            .setSmallIcon(R.drawable.ic_stat_koro)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setContentIntent(linkIntent(c, 4301, url) ?: openApp(c, 4301))
+            .setAutoCancel(true)
+            .setTimeoutAfter(10 * 60_000L)
+            .setColor(0xFF3AA7E8.toInt())
+            .build()
+        try { NotificationManagerCompat.from(c).notify(4301, n) } catch (_: SecurityException) { }
+    }
+
+    const val WATER_ID = 4401
+    /** Water reminder with a "+1 glass" action (logged by the app next time it opens). */
+    fun water(c: Context, title: String) {
+        channels(c)
+        val add = PendingIntent.getBroadcast(c, WATER_ID, Intent(c, WidgetActionReceiver::class.java).setAction(WidgetActionReceiver.WATER),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val n = NotificationCompat.Builder(c, CH_WATER)
+            .setSmallIcon(R.drawable.ic_stat_koro)
+            .setContentTitle(title)
+            .setContentText("Tap +1 glass when you've had it")
+            .setContentIntent(openApp(c, WATER_ID))
+            .addAction(0, "+1 glass", add)
+            .setAutoCancel(true)
+            .setColor(0xFF3AA7E8.toInt())
+            .build()
+        try { NotificationManagerCompat.from(c).notify(WATER_ID, n) } catch (_: SecurityException) { }
     }
 
     fun cancel(c: Context, id: Int) = NotificationManagerCompat.from(c).cancel(id)

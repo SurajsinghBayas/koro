@@ -388,6 +388,7 @@ h3 { font-size: var(--fs-lg); font-weight: 650; letter-spacing: -.01em; }
   /* burn-in guard: JS sets --dx/--dy to -2..2px once a minute */
   transform: translate(var(--dx, 0px), var(--dy, 0px));
   transition: transform 2s linear;
+  overflow-y: auto; overscroll-behavior: contain;
 }
 .desk__time {
   font: 600 var(--fs-clock)/.9 var(--font-body);
@@ -401,6 +402,7 @@ h3 { font-size: var(--fs-lg); font-weight: 650; letter-spacing: -.01em; }
 .desk--dim { opacity: .45; }         /* night: dim via opacity (compositor-only) */
 @media (orientation: portrait) {
   .desk { grid-template-columns: 1fr; align-content: center; gap: var(--s6); text-align: center; }
+  .desk .flaps, .desk .trow, .desk .wc { justify-content: center; }
 }
 
 /* ---------- Utilities ---------- */

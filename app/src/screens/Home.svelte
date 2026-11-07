@@ -2,11 +2,15 @@
   import Icon from '../components/Icon.svelte';
   import ItemSheet, { type SheetItem } from '../components/ItemSheet.svelte';
   import NowPlaying from '../components/NowPlaying.svelte';
+  import Events from '../components/Events.svelte';
+  import MacControls from '../components/MacControls.svelte';
+  import Timers from '../components/Timers.svelte';
+  import Weather from '../components/Weather.svelte';
   import MatchRow from '../components/MatchRow.svelte';
   import Odo from '../components/Odo.svelte';
   import { openUrl } from '../lib/open.ts';
   import {
-    app, doneReminder, groceryOpen, habits, quickAdd, refreshAll, startFocus, startSleep, stopFocus, stopSleep,
+    addWater, app, doneReminder, groceryOpen, habits, quickAdd, refreshAll, saveForLater, waterToday,
     streak, toast, todayTasks, toggleGrocery, toggleHabit, toggleTask, doneOn, upcomingReminders, paired,
   } from '../lib/store.svelte.ts';
   import { ago, dueInfo, fmtWhen, greeting } from '../lib/util.ts';
@@ -28,10 +32,6 @@
     return () => clearTimeout(t);
   });
 
-  const mmss = (ms: number) => {
-    const s = Math.max(0, Math.round(ms / 1000));
-    return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
-  };
 
   async function add(hint?: 'task' | 'reminder' | 'grocery' | 'habit') {
     if (!text.trim() || busy) return;
@@ -47,9 +47,7 @@
   const reminders = $derived(upcomingReminders().slice(0, 3));
   const matches = $derived(app.home?.matches);
   const matchList = $derived(matches ? [...matches.live, ...matches.upcoming.slice(0, 2), ...matches.recent.slice(0, 1)].slice(0, 4) : []);
-  const xOver = $derived(app.screenTime !== null && app.screenTime > app.prefs.xLimit);
-  const focusLeft = $derived(app.focus.endsAt - now);
-  const sleepLeft = $derived(app.sleep.endsAt - now);
+  const water = $derived(waterToday());
   const date = $derived(new Date(now).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' }));
 </script>
 
@@ -91,6 +89,10 @@
       <button type="button" class="chip" onclick={() => { text = text ? `${text} tonight` : ''; add('reminder'); }}>Tonight</button>
     </div>
   </form>
+
+  <Weather />
+
+  <Events />
 
   <NowPlaying />
 
@@ -134,18 +136,13 @@
     </section>
   {/if}
 
-  <div class="grid-2">
-    <button class="card tile" class:is-running={focusLeft > 0} onclick={() => (focusLeft > 0 ? stopFocus() : startFocus())}>
-      <span class="label">Focus</span>
-      <span class="tile__time display-pixel">{focusLeft > 0 ? mmss(focusLeft) : `${app.prefs.focusMin}:00`}</span>
-      <span class="hint">{focusLeft > 0 ? 'Tap to stop' : 'Tap to start · DND on'}</span>
-    </button>
-    <button class="card tile" class:is-running={sleepLeft > 0} onclick={() => (sleepLeft > 0 ? stopSleep() : startSleep())}>
-      <span class="label">Sleep timer</span>
-      <span class="tile__time display-pixel">{sleepLeft > 0 ? mmss(sleepLeft) : `${app.prefs.sleepMin}m`}</span>
-      <span class="hint">{sleepLeft > 0 ? 'Music stops at 0 · tap to cancel' : 'Tap to start'}</span>
-    </button>
-  </div>
+  <Timers {now} />
+
+  <button class="card water" onclick={() => addWater()}>
+    <Icon name="drop" />
+    <span class="grow"><b>Water</b><span class="hint">{(water / 1000).toFixed(2)} / {(app.prefs.waterGoal / 1000).toFixed(1)} L · tap for +{app.prefs.waterGlass} ml</span></span>
+    <span class="meter wmeter"><span style="--value:{Math.min(1, water / app.prefs.waterGoal)}"></span></span>
+  </button>
 
   <section class="card">
     <div class="card__title"><h3>Habits</h3><button class="label linkish" onclick={() => (app.tab = 'lists')}>Edit ›</button></div>
@@ -158,13 +155,9 @@
     {:else}
       <p class="muted">No habits yet. Try “read 20 pages daily”.</p>
     {/each}
-    {#if app.screenTime !== null}
-      <div class="xrow">
-        <div class="row between"><span>X today</span><span class="num" style:color={xOver ? 'var(--danger)' : 'var(--text-2)'}>{app.screenTime} / {app.prefs.xLimit} min</span></div>
-        <div class="meter" class:meter--low={xOver}><span style="--value:{Math.min(1, app.screenTime / app.prefs.xLimit)}"></span></div>
-      </div>
-    {/if}
   </section>
+
+  {#if paired()}<MacControls />{/if}
 
   {#if app.home?.devices?.length || app.battery}
     <section class="card stack">
@@ -193,7 +186,7 @@
       <div class="mt-2">
         {#if app.home.news.digest?.[newsCat]?.length}
           {#each app.home.news.digest[newsCat]!.slice(0, 3) as s (s.url)}
-            <button class="news-item" onclick={() => openUrl(s.url)}>
+            <button class="news-item" onclick={() => openUrl(s.url)} oncontextmenu={(e) => { e.preventDefault(); saveForLater(s.url, s.title); }}>
               <div class="news-text"><b>{s.title}</b>{#if s.summary}<p>{s.summary}</p>{/if}<span>{s.sources[0]?.source}{s.sources.length > 1 ? ` +${s.sources.length - 1}` : ''} · {ago(s.publishedAt)}</span></div>
               {#if s.image}<img src={s.image} alt="" loading="lazy" referrerpolicy="no-referrer" onerror={(e) => ((e.currentTarget as HTMLElement).style.display = 'none')} />{/if}
             </button>
@@ -237,13 +230,12 @@
   .when { min-width: 64px; font-size: var(--fs-sm); }
   .grow { flex: 1; }
   .mini { width: 32px; height: 32px; display: grid; place-items: center; color: var(--text-3); }
-  .tile { display: flex; flex-direction: column; gap: var(--s2); text-align: left; }
-  .tile__time { font-size: 1.75rem; line-height: 1; }
-  .tile.is-running { box-shadow: inset 0 0 0 var(--px) var(--accent); }
+  .water { display: flex; align-items: center; gap: var(--s3); text-align: left; color: var(--accent-text); }
+  .water .grow { display: flex; flex-direction: column; gap: 2px; color: var(--text); }
+  .wmeter { width: 64px; }
   .hint { font-size: var(--fs-xs); color: var(--text-3); }
   .habit { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: var(--s3); min-height: 48px; }
   .streak { font-size: var(--fs-sm); font-weight: 650; color: var(--gold-text); }
-  .xrow { display: flex; flex-direction: column; gap: 6px; margin-top: var(--s2); }
   .news-item { display: grid; grid-template-columns: 1fr auto; gap: var(--s3); width: 100%; text-align: left; padding: var(--s3) 0; border-bottom: 1px solid var(--line); }
   .news-item:last-child { border-bottom: 0; padding-bottom: 0; }
   .news-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }

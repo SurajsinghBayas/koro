@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Db } from '../db.ts';
+import { processSaved } from '../services/saved.ts';
 
 /** Synced tables and their client-writable columns (besides id / updated_at / deleted_at). */
 export const SYNC_TABLES = {
@@ -9,6 +10,8 @@ export const SYNC_TABLES = {
   habits: ['name', 'days_mask', 'remind_time', 'sort'],
   habit_logs: ['habit_id', 'day'],
   reminders: ['title', 'fire_at', 'repeat', 'done_at'],
+  water_logs: ['day', 'ml'],
+  saved: ['url', 'title', 'read_at'], // the rest (content, summary…) is filled in by the server
 } as const;
 export type SyncTable = keyof typeof SYNC_TABLES;
 
@@ -22,10 +25,11 @@ const body = z.object({ cursor: z.coerce.number().int().min(0).default(0), chang
 
 const REQUIRED: Partial<Record<SyncTable, string[]>> = {
   tasks: ['title'], grocery_items: ['name'], habits: ['name'], habit_logs: ['habit_id', 'day'], reminders: ['title', 'fire_at'],
+  water_logs: ['day'], saved: ['url'],
 };
 
 /** Not-null columns that clients may omit. */
-const DEFAULTS: Record<string, unknown> = { priority: 0, sort: 0, days_mask: 127 };
+const DEFAULTS: Record<string, unknown> = { priority: 0, sort: 0, days_mask: 127, ml: 250 };
 
 export async function applyChange(db: Db, table: SyncTable, row: Record<string, any>) {
   const cols = SYNC_TABLES[table] as readonly string[];
@@ -77,6 +81,7 @@ export function syncRoutes(db: Db) {
         rejected.push({ id: ch.row.id, error: (e as Error).message });
       }
     }
+    if (parsed.data.changes.some((ch) => ch.table === 'saved')) void processSaved(db);
     return c.json({ ...(await pull(db, parsed.data.cursor)), rejected });
   });
   return r;

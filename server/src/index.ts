@@ -12,6 +12,8 @@ import { refreshHistory } from './services/cricket/history.ts';
 import { refreshNews } from './services/news.ts';
 import { pushEnabled } from './services/push.ts';
 import { startXNotifier } from './services/xnotify.ts';
+import { processSaved } from './services/saved.ts';
+import { startYt } from './services/yt.ts';
 
 const db = await openDb(env.DATABASE_URL);
 await migrate(db);
@@ -51,6 +53,8 @@ if (env.JOBS) {
   setTimeout(history, 20_000);
   setInterval(history, 30 * 60_000);
   startXNotifier(db);
+  startYt(db);
+  setTimeout(() => void processSaved(db), 15_000); // anything left pending by a restart
 }
 
 const server = Bun.serve({ port: env.PORT, hostname: env.HOST, fetch: app.fetch, idleTimeout: 30 });

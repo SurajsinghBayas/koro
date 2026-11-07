@@ -1,7 +1,7 @@
 import { localWallClock, parseQuick, type QuickResult } from '../../../shared/quickadd.ts';
 import { ApiError, request } from './api.ts';
 import { kvClear, kvGet, kvSet } from './kv.ts';
-import { native, type NowPlaying } from './native.ts';
+import { native, type AppUse, type CalEvent, type NowPlaying } from './native.ts';
 import { dayKey, localNowLabel, nowIso, uuid7 } from './util.ts';
 
 // ---------- types ----------
@@ -11,9 +11,13 @@ export type Grocery = Base & { name: string; category?: string | null; need_by?:
 export type Habit = Base & { name: string; days_mask: number; remind_time?: string | null; sort: number };
 export type HabitLog = Base & { habit_id: string; day: string };
 export type Reminder = Base & { title: string; fire_at: string; repeat?: string | null; done_at?: string | null };
-type Tables = { tasks: Task; grocery_items: Grocery; habits: Habit; habit_logs: HabitLog; reminders: Reminder };
+export type WaterLog = Base & { day: string; ml: number };
+export type Block = { t: 'p' | 'h' | 'li' | 'q'; x: string };
+export type Saved = Base & { url: string; title?: string | null; site?: string | null; image?: string | null; excerpt?: string | null; summary?: string | null;
+  content?: string | null; words?: number | null; status?: 'pending' | 'ready' | 'failed'; read_at?: string | null };
+type Tables = { tasks: Task; grocery_items: Grocery; habits: Habit; habit_logs: HabitLog; reminders: Reminder; water_logs: WaterLog; saved: Saved };
 export type TableName = keyof Tables;
-const TABLES: TableName[] = ['tasks', 'grocery_items', 'habits', 'habit_logs', 'reminders'];
+const TABLES: TableName[] = ['tasks', 'grocery_items', 'habits', 'habit_logs', 'reminders', 'water_logs', 'saved'];
 
 export type Innings = { team: string; inning: number; runs: number; wkts: number; overs: number };
 export type Match = {
@@ -40,19 +44,30 @@ export type Home = {
   news: Record<'world' | 'india' | 'ai' | 'startups' | 'cricket', NewsItem[]> & { updatedAt: string | null; digest?: Partial<Record<string, Story[]>> };
   x?: XData;
   devices: DeviceRow[];
+  mac?: MacState;
   inbox: { id: number; kind: string; title: string; body: string; created_at: string }[];
   features: { ai: boolean; push: boolean; cricketDetail: boolean; sportmonks: boolean };
   me: { id: string; name: string; kind: string };
 };
-export type Tab = 'home' | 'matches' | 'news' | 'lists' | 'settings';
+export type Weather = {
+  place: string | null; now: { temp: number; feels: number; code: number; wind: number; humidity: number; isDay: boolean };
+  today: { max: number; min: number; rainChance: number; sunrise: string; sunset: string; uv: number };
+  hours: { at: string; temp: number; code: number; rain: number }[]; aqi: number | null; rainSoon: string | null; at: string;
+};
+export type YtVideo = { id: string; channelId: string; channel: string; title: string; publishedAt: string; thumb: string; summary?: string[]; from?: 'transcript' | 'description' };
+export type YtData = { channels: { id: string; title: string; handle?: string }[]; videos: YtVideo[]; at: string | null };
+export type MacState = { online: boolean; volume: number | null; muted: boolean | null };
+export type Tab = 'home' | 'matches' | 'news' | 'well' | 'lists' | 'settings';
 type Cfg = { server: string; token: string; deviceId: string; name: string };
-type Prefs = { theme: 'auto' | 'light' | 'dark'; xLimit: number; xPackage: string; focusMin: number; sleepMin: number };
+type Prefs = { theme: 'auto' | 'light' | 'dark'; xLimit: number; xPackage: string; focusMin: number; sleepMin: number;
+  waterGoal: number; waterGlass: number; waterRemind: boolean; waterStart: string; waterEnd: string; waterEvery: number };
 
 // ---------- state ----------
 export const app = $state({
   ready: false,
   cfg: { server: '', token: '', deviceId: '', name: '' } as Cfg,
-  prefs: { theme: 'auto', xLimit: 30, xPackage: 'com.twitter.android', focusMin: 25, sleepMin: 30 } as Prefs,
+  prefs: { theme: 'auto', xLimit: 30, xPackage: 'com.twitter.android', focusMin: 25, sleepMin: 30,
+    waterGoal: 2500, waterGlass: 250, waterRemind: false, waterStart: '09:00', waterEnd: '21:00', waterEvery: 2 } as Prefs,
   tab: 'home' as Tab,
   desk: false,
   tasks: [] as Task[],
@@ -60,6 +75,15 @@ export const app = $state({
   habits: [] as Habit[],
   habit_logs: [] as HabitLog[],
   reminders: [] as Reminder[],
+  water_logs: [] as WaterLog[],
+  saved: [] as Saved[],
+  weather: null as Weather | null,
+  events: [] as CalEvent[],
+  eventsAllowed: null as boolean | null,
+  apps: null as null | { apps: AppUse[]; totalMin: number },
+  focusLog: [] as { day: string; min: number }[],
+  yt: null as YtData | null,
+  mac: null as MacState | null,
   home: null as Home | null,
   homeEtag: '' as string,
   matchesFull: null as null | MatchesFull,
@@ -99,7 +123,10 @@ export async function init() {
   app.home = await kvGet('home', null);
   app.focus = await kvGet('focus', { endsAt: 0 });
   app.sleep = await kvGet('sleep', { endsAt: 0 });
+  app.weather = await kvGet('weather', null);
+  app.focusLog = await kvGet('focusLog', []);
   applyTheme();
+  if (app.cfg.server && app.cfg.token) void native.setAuth(app.cfg.server, app.cfg.token);
   rollRepeatingReminders();
   app.ready = true;
   void refreshAll();
@@ -125,6 +152,7 @@ function write<K extends TableName>(table: K, row: Tables[K]) {
   void saveOutbox();
   scheduleAlarm(table, row);
   scheduleSync();
+  scheduleWidgets();
 }
 /** Public edit (title, date, time, repeat…). */
 export function update<K extends TableName>(table: K, row: Tables[K]) { write(table, { ...row }); }
@@ -240,6 +268,139 @@ export async function rescheduleAll() {
   for (const r of upcomingReminders()) await scheduleNative(r);
   for (const t of live(app.tasks)) if (t.due_time && !t.done_at) scheduleAlarm('tasks', t);
   for (const h of live(app.habits)) if (h.remind_time) scheduleAlarm('habits', h);
+}
+
+// ---------- wellbeing: water ----------
+export const waterToday = (day = dayKey()) => live(app.water_logs).filter((w) => w.day === day).reduce((n, w) => n + (w.ml || 0), 0);
+export function addWater(ml = app.prefs.waterGlass) {
+  write('water_logs', { id: uuid7(), day: dayKey(), ml, updated_at: '' } as WaterLog);
+  native.vibrate(waterToday() >= app.prefs.waterGoal ? [10, 40, 10, 40, 10] : 10);
+}
+export function undoWater() {
+  const last = live(app.water_logs).filter((w) => w.day === dayKey()).sort((a, b) => b.id.localeCompare(a.id))[0];
+  if (last) write('water_logs', { ...last, deleted_at: nowIso() });
+}
+export const waterWeek = () => Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return { day: dayKey(d), ml: waterToday(dayKey(d)) }; });
+const waterTimes = () => {
+  const [sh, sm] = app.prefs.waterStart.split(':').map(Number), [eh, em] = app.prefs.waterEnd.split(':').map(Number);
+  const out: string[] = [];
+  for (let t = (sh ?? 9) * 60 + (sm ?? 0); t <= (eh ?? 21) * 60 + (em ?? 0); t += Math.max(1, app.prefs.waterEvery) * 60) out.push(`${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`);
+  return out.slice(0, 16);
+};
+/** Daily repeating water nudges (native alarms with a "+1 glass" button). */
+export async function scheduleWater() {
+  const prev: string[] = await kvGet('waterAlarms', []);
+  for (const id of prev) await native.cancelReminder(id);
+  if (!app.prefs.waterRemind) { await kvSet('waterAlarms', []); return; }
+  const ids: string[] = [];
+  for (const hm of waterTimes()) {
+    const [h, m] = hm.split(':').map(Number);
+    const at = new Date(); at.setHours(h ?? 9, m ?? 0, 0, 0);
+    if (at.getTime() <= Date.now()) at.setDate(at.getDate() + 1);
+    const id = `water:${hm}`;
+    await native.scheduleReminder({ id, title: '💧 Time for a glass of water', at: at.getTime(), repeat: 'daily' });
+    ids.push(id);
+  }
+  await kvSet('waterAlarms', ids);
+}
+
+// ---------- focus log (for Wellbeing) ----------
+function logFocus(min: number) {
+  if (min < 1) return;
+  const day = dayKey();
+  const i = app.focusLog.findIndex((f) => f.day === day);
+  if (i >= 0) app.focusLog[i] = { day, min: app.focusLog[i]!.min + min }; else app.focusLog.push({ day, min });
+  app.focusLog = app.focusLog.slice(-30);
+  void kvSet('focusLog', app.focusLog);
+}
+export const focusToday = () => app.focusLog.find((f) => f.day === dayKey())?.min ?? 0;
+
+// ---------- read later ----------
+export const savedList = () => live(app.saved).sort((a, b) => Number(!!a.read_at) - Number(!!b.read_at) || b.id.localeCompare(a.id));
+export function saveForLater(url: string, title?: string) {
+  const existing = live(app.saved).find((x) => x.url === url);
+  if (existing) { toast('Already in Read later'); return; }
+  write('saved', { id: uuid7(), url, title: title ?? null, status: 'pending', updated_at: '' } as Saved);
+  toast('Saved. Full article and summary are on the way');
+}
+export function markRead(x: Saved, read = true) { write('saved', { ...x, read_at: read ? nowIso() : null }); }
+export const blocks = (x: Saved): Block[] => { try { return x.content ? JSON.parse(x.content) : []; } catch { return []; } };
+
+// ---------- weather & calendar ----------
+export async function loadWeather(ask = false) {
+  if (!paired()) return;
+  let loc = await native.location();
+  if (!loc.granted && ask) { await native.requestPermission('location'); await new Promise((r) => setTimeout(r, 2500)); loc = await native.location(); }
+  if (loc.lat === undefined || loc.lon === undefined) return;
+  try {
+    const r = await request<Weather>(app.cfg.server, `/v1/weather?lat=${loc.lat.toFixed(3)}&lon=${loc.lon.toFixed(3)}`, { token: app.cfg.token });
+    if (r.data) { app.weather = r.data; void kvSet('weather', r.data); }
+  } catch { /* keep the last forecast */ }
+}
+export async function loadCalendar(ask = false) {
+  let r = await native.calendar(1);
+  if (!r.granted && ask) { await native.requestPermission('calendar'); await new Promise((res) => setTimeout(res, 2500)); r = await native.calendar(1); }
+  app.eventsAllowed = r.granted;
+  app.events = r.events;
+}
+export async function loadApps() { const r = await native.screenTimeTop(6); app.apps = r.granted ? { apps: r.apps, totalMin: r.totalMin } : null; }
+
+// ---------- Mac ----------
+export async function loadMac() {
+  if (!paired()) return;
+  try { const r = await request<MacState>(app.cfg.server, '/v1/mac/status', { token: app.cfg.token }); if (r.data) app.mac = r.data; } catch { /* offline */ }
+}
+export async function macSend(body: { type: 'clip'; text: string } | { type: 'link'; url: string; title?: string } | { type: 'cmd'; cmd: string; value?: number }) {
+  native.vibrate(8);
+  try {
+    const { data } = await request<{ ok: boolean; online: boolean }>(app.cfg.server, '/v1/mac/send', { token: app.cfg.token, body });
+    if (data && !data.online) toast('Your Mac looks offline. It will get this when it wakes (within a minute).');
+    if (body.type === 'cmd' && body.cmd.startsWith('vol') || (body.type === 'cmd' && (body.cmd === 'volume' || body.cmd === 'mute'))) setTimeout(loadMac, 1200);
+    return true;
+  } catch (e) { toast((e as Error).message); return false; }
+}
+export async function sendClipboardToMac() {
+  const text = (await native.clipboardRead()).trim();
+  if (!text) return toast('Clipboard is empty');
+  if (await macSend(/^https?:\/\/\S+$/.test(text) ? { type: 'link', url: text } : { type: 'clip', text })) toast(/^https?:\/\//.test(text) ? 'Link opened on your Mac' : 'Copied to your Mac');
+}
+
+// ---------- YouTube ----------
+export async function loadYt() {
+  if (!paired()) return;
+  try { const r = await request<YtData>(app.cfg.server, '/v1/yt', { token: app.cfg.token }); if (r.data) app.yt = r.data; } catch (e) { handleError(e); }
+}
+export async function addYtChannel(input: string) {
+  const { data } = await request<{ ok: boolean; channel: { title: string } }>(app.cfg.server, '/v1/yt/channels', { token: app.cfg.token, body: { input }, timeoutMs: 30_000 });
+  toast(`Following ${data?.channel.title ?? 'channel'}. New videos appear in a minute`);
+  setTimeout(loadYt, 8000);
+  await loadYt();
+}
+export async function removeYtChannel(id: string) {
+  await request(app.cfg.server, `/v1/yt/channels/${id}`, { token: app.cfg.token, method: 'DELETE' });
+  await loadYt();
+}
+
+// ---------- widgets & actions taken outside the app ----------
+let widgetTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleWidgets() { clearTimeout(widgetTimer); widgetTimer = setTimeout(() => void pushWidgets(), 800); }
+export async function pushWidgets() {
+  const today = dayKey();
+  const tasks = todayTasks().slice(0, 12).map((t) => ({ id: t.id, text: t.title, done: !!t.done_at, meta: t.due_time && !t.done_at ? t.due_time : '' }));
+  const hs = habits().map((h) => ({ id: h.id, text: h.name, done: doneOn(h, today), meta: streak(h) ? `${streak(h)}🔥` : '' }));
+  const grocery = groceryOpen().slice(0, 20).map((g) => ({ id: g.id, text: g.name, done: false, meta: '' }));
+  await native.widgetData({ tasks, habits: hs, grocery });
+}
+/** Ticks made on widgets and "+1 glass" taps on notifications while the app was closed. */
+export async function applyOps() {
+  const ops = await native.takeOps();
+  for (const op of ops) {
+    if (op.kind === 'water') { write('water_logs', { id: uuid7(), day: dayKey(new Date(op.at)), ml: op.ml ?? app.prefs.waterGlass, updated_at: '' } as WaterLog); continue; }
+    if (op.kind === 'tasks') { const t = app.tasks.find((x) => x.id === op.id); if (t) write('tasks', { ...t, done_at: t.done_at ? null : new Date(op.at).toISOString() }); }
+    if (op.kind === 'habits') { const h = app.habits.find((x) => x.id === op.id); if (h) toggleHabit(h); }
+    if (op.kind === 'grocery') { const g = app.grocery_items.find((x) => x.id === op.id); if (g && !g.bought_at) write('grocery_items', { ...g, bought_at: new Date(op.at).toISOString() }); }
+  }
+  if (ops.length) toast(`Synced ${ops.length} change${ops.length > 1 ? 's' : ''} from your home screen`);
 }
 
 // ---------- quick add ----------
@@ -375,8 +536,13 @@ export async function setupPush(): Promise<string> {
 
 /** Everything a fresh app open needs, in parallel. */
 export async function refreshAll() {
+  void applyOps();
+  void loadCalendar();
+  void loadApps();
   if (!paired()) return;
   await Promise.all([sync(), loadHome(), reportBattery(), refreshScreenTime()]);
+  void pushWidgets();
+  if (!app.weather || Date.now() - Date.parse(app.weather.at) > 30 * 60_000) void loadWeather();
 }
 
 export async function pair(server: string, code: string, name: string) {
@@ -386,6 +552,7 @@ export async function pair(server: string, code: string, name: string) {
   if (!data) throw new Error('No response');
   app.cfg = { server, token: data.token, deviceId: data.deviceId, name: data.name };
   await kvSet('cfg', app.cfg);
+  void native.setAuth(server, data.token);
   cursor = 0;
   await kvSet('cursor', 0);
   // everything created before pairing goes up on the first sync
@@ -403,14 +570,31 @@ export async function unpair(wipe = false) {
 }
 
 // ---------- focus / sleep ----------
+export async function setTimerMin(kind: 'focus' | 'sleep', min: number) {
+  const v = Math.max(5, Math.min(180, Math.round(min / 5) * 5));
+  if (kind === 'focus') app.prefs.focusMin = v; else app.prefs.sleepMin = v;
+  await savePrefs();
+}
+/** +/- minutes on a running timer (re-arms the native alarm). */
+export async function extendTimer(kind: 'focus' | 'sleep', deltaMin: number) {
+  const t = kind === 'focus' ? app.focus : app.sleep;
+  if (t.endsAt <= Date.now()) return;
+  const left = Math.max(1, Math.round((t.endsAt - Date.now()) / 60_000) + deltaMin);
+  if (kind === 'focus') { await native.focusStart(left); app.focus = { endsAt: Date.now() + left * 60_000, startedAt: (app.focus as any).startedAt } as any; void kvSet('focus', app.focus); }
+  else { await native.sleepStart(left); app.sleep = { endsAt: Date.now() + left * 60_000 }; void kvSet('sleep', app.sleep); }
+  native.vibrate(8);
+  toast(`${kind === 'focus' ? 'Focus' : 'Sleep timer'}: ${left} min left`);
+}
 export async function startFocus() {
   const r = await native.focusStart(app.prefs.focusMin);
-  app.focus = { endsAt: Date.now() + app.prefs.focusMin * 60_000 };
+  app.focus = { endsAt: Date.now() + app.prefs.focusMin * 60_000, startedAt: Date.now() } as any;
   void kvSet('focus', app.focus);
   native.vibrate(15);
   toast(r.dnd ? 'Focus on · Do Not Disturb enabled' : 'Focus on (allow DND access in Settings to silence calls)');
 }
 export async function stopFocus() {
+  const started = (app.focus as any).startedAt as number | undefined;
+  if (started) logFocus(Math.round((Math.min(Date.now(), app.focus.endsAt) - started) / 60_000));
   await native.focusStop();
   app.focus = { endsAt: 0 };
   void kvSet('focus', app.focus);

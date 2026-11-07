@@ -2,7 +2,7 @@
   import Icon from '../components/Icon.svelte';
   import { request } from '../lib/api.ts';
   import { isNative, native, type PermKind, type Perms } from '../lib/native.ts';
-  import { app, pair, paired, refreshAll, savePrefs, setupPush, toast, unpair } from '../lib/store.svelte.ts';
+  import { app, loadCalendar, loadWeather, pair, paired, refreshAll, savePrefs, setupPush, toast, unpair } from '../lib/store.svelte.ts';
   import { ago, dissolve } from '../lib/util.ts';
 
   let server = $state(app.cfg.server || '');
@@ -49,6 +49,10 @@
     { key: 'dnd', kind: 'dnd', label: 'Do Not Disturb access', why: 'Focus mode silences calls/notifications' },
     { key: 'usage', kind: 'usage', label: 'Usage access', why: 'Shows your X screen time' },
     { key: 'media', kind: 'media', label: 'Notification access', why: 'Shows what Spotify / YT Music is playing, with controls' },
+  ];
+  const RUNTIME: { key: 'calendar' | 'location'; label: string; why: string; go: () => Promise<void> }[] = [
+    { key: 'calendar', label: 'Calendar', why: "Today's Google Calendar events on Home and desk mode (read only)", go: () => loadCalendar(true) },
+    { key: 'location', label: 'Location (approximate)', why: 'Weather for where you are', go: () => loadWeather(true) },
   ];
 </script>
 
@@ -100,7 +104,11 @@
     <h3>Timers & limits</h3>
     <label class="kv"><span>Focus length (min)</span><input class="input small" type="number" min="5" max="180" bind:value={app.prefs.focusMin} onchange={savePrefs} /></label>
     <label class="kv"><span>Sleep timer (min)</span><input class="input small" type="number" min="5" max="180" bind:value={app.prefs.sleepMin} onchange={savePrefs} /></label>
-    <label class="kv"><span>X daily limit (min)</span><input class="input small" type="number" min="5" max="600" bind:value={app.prefs.xLimit} onchange={savePrefs} /></label>
+  </section>
+
+  <section class="card stack">
+    <h3>Mac</h3>
+    <p class="hint">With the Koro agent on your Mac (<code>koro-mac.sh install</code>): text you copy on the Mac appears on the phone's clipboard, Share → Koro sends links and text the other way, and Home has a Mac remote (lock, sleep, media, volume). Passwords copied from password managers are never sent. Pause clipboard sync on the Mac with <code>koro-mac.sh clip off</code>.</p>
   </section>
 
   {#if isNative}
@@ -113,6 +121,13 @@
           {:else}<button class="btn btn--gold small" onclick={() => (p.kind === 'notifications' ? native.requestNotifications().then(loadPerms) : native.openSettings(p.kind))}>Allow</button>{/if}
         </div>
       {/each}
+      {#each RUNTIME as p}
+        <div class="perm">
+          <div><b>{p.label}</b><div class="hint">{p.why}</div></div>
+          {#if perms?.[p.key]}<span class="badge">On</span>
+          {:else}<button class="btn btn--gold small" onclick={() => p.go().then(loadPerms)}>Allow</button>{/if}
+        </div>
+      {/each}
     </section>
   {/if}
 
@@ -122,6 +137,7 @@
 <style>
   .kv { display: flex; justify-content: space-between; align-items: center; gap: var(--s3); }
   .kv > :last-child { text-align: right; color: var(--text-2); min-width: 0; overflow-wrap: anywhere; }
+  code { font-size: .9em; background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
   .mono { font-family: ui-monospace, monospace; font-size: var(--fs-sm); }
   .row.wrap { flex-wrap: wrap; }
   .row.wrap .btn { min-height: 40px; padding: 0 14px; font-size: var(--fs-sm); }

@@ -23,6 +23,18 @@
     next: 'M17 5h2v14h-2zM5 5h2v2h2v2h2v2h2v2h-2v2H9v2H7v2H5z',
     clock: 'M8 2h8v2h2v2h2v12h-2v2h-2v2H8v-2H6v-2H4V6h2V4h2zm0 4v2H6v8h2v2h8v-2h2V8h-2V6zm3 1h2v5h3v2h-5z',
     cal: 'M7 2h2v2h6V2h2v2h3v16H4V4h3zM6 8v10h12V8zm2 2h3v3H8z',
+    drop: 'M11 2h2v2h1v2h1v2h1v2h1v2h1v5h-1v2h-2v1h-2v1h-4v-1H8v-1H6v-2H5v-5h1v-2h1V8h1V6h1V4h1V2zm-3 12v3h1v1h2v-2H9v-2z',
+    lock: 'M9 2h6v2h2v5h2v13H5V9h2V4h2zm0 2v5h6V4zm2 9v5h2v-5z',
+    vol: 'M3 9h4V7h2V5h2v14H9v-2H7v-2H3zm12-1h2v8h-2zm3-3h2v14h-2z',
+    mute: 'M3 9h4V7h2V5h2v14H9v-2H7v-2H3zm11 0h2v2h2V9h2v2h-2v2h2v2h-2v-2h-2v2h-2v-2h2v-2h-2z',
+    laptop: 'M4 4h16v11H4zm2 2v7h12V6zM1 17h22v3H1z',
+    bookmark: 'M5 2h14v20h-2v-2h-2v-2h-2v-2h-2v2H9v2H7v2H5zm2 2v13h2v-2h2v-2h2v2h2v2h2V4z',
+    cloud: 'M9 5h6v2h2v2h3v2h2v6h-2v2H4v-2H2v-5h2V9h3V7h2zm0 4v2H6v2H4v3h16v-4h-3v-2h-2V7H9z',
+    minus: 'M4 11h16v2H4z',
+    link: 'M3 9h2V7h8v2h2v2h-2V9H5v6h8v-2h2v2h-2v2H5v-2H3zm8 2h2v2h-2zm2-4h6v2h2v6h-2v2h-6v-2h6V9h-6z',
+    copy: 'M8 2h13v13h-4v-2h2V4h-9v2H8zM3 8h13v14H3zm2 2v10h9V10z',
+    heart: 'M4 4h6v2h1v1h2V6h1V4h6v2h2v7h-2v2h-2v2h-2v2h-2v2h-2v-2H9v-2H7v-2H5v-2H3V6h1z',
+    yt: 'M3 5h18v14H3zm7 4v6h2v-1h2v-1h1v-2h-1v-1h-2V9z',
     sparkle: 'M11 2h2v5h2v2h5v2h-5v2h-2v5h-2v-5H9v-2H4V9h5V7h2z',
   };
   let { name, size = 20 }: { name: keyof typeof P | string; size?: number } = $props();

@@ -10,6 +10,7 @@
   import Matches from './screens/Matches.svelte';
   import News from './screens/News.svelte';
   import Settings from './screens/Settings.svelte';
+  import Wellbeing from './screens/Wellbeing.svelte';
 
   void init().then(rescheduleAll);
 
@@ -55,6 +56,7 @@
     { id: 'home', label: 'Home', icon: 'home' },
     { id: 'matches', label: 'Matches', icon: 'ball' },
     { id: 'news', label: 'News', icon: 'news' },
+    { id: 'well', label: 'Wellbeing', icon: 'heart' },
     { id: 'lists', label: 'Lists', icon: 'list' },
   ];
   function go(t: Tab) {
@@ -79,6 +81,7 @@
   {#if app.tab === 'home'}<Home onDesk={enterDesk} />
   {:else if app.tab === 'matches'}<Matches />
   {:else if app.tab === 'news'}<News />
+  {:else if app.tab === 'well'}<Wellbeing />
   {:else if app.tab === 'lists'}<Lists />
   {:else}<Settings />{/if}
 

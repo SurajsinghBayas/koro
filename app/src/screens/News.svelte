@@ -2,17 +2,21 @@
   import Icon from '../components/Icon.svelte';
   import { openUrl } from '../lib/open.ts';
   import XPostView from '../components/XPost.svelte';
-  import { app, loadNews, loadX, type Story } from '../lib/store.svelte.ts';
+  import SavedList from '../components/SavedList.svelte';
+  import YouTube from '../components/YouTube.svelte';
+  import { app, loadNews, loadX, saveForLater, savedList, type Story } from '../lib/store.svelte.ts';
   import { ago } from '../lib/util.ts';
 
-  const CATS = ['world', 'india', 'ai', 'startups', 'feed'] as const;
-  const NAMES = { world: 'World', india: 'India', ai: 'AI & Tech', startups: 'AI Startups', feed: 'My feed' };
+  const CATS = ['world', 'india', 'ai', 'startups', 'feed', 'yt', 'saved'] as const;
+  const NAMES = { world: 'World', india: 'India', ai: 'AI & Tech', startups: 'AI Startups', feed: 'My feed', yt: 'YouTube', saved: 'Read later' };
   type Cat = (typeof CATS)[number];
   let cat = $state<Cat>('world');
-  $effect(() => { if (cat === 'feed') void loadX(); else void loadNews(cat); });
+  const isNews = (c: Cat): c is 'world' | 'india' | 'ai' | 'startups' => c !== 'feed' && c !== 'yt' && c !== 'saved';
+  $effect(() => { if (cat === 'feed') void loadX(); else if (isNews(cat)) void loadNews(cat); });
+  const unread = $derived(savedList().filter((x) => !x.read_at).length);
 
-  const items = $derived(cat === 'feed' ? [] : (app.news[cat] ?? app.home?.news[cat] ?? []));
-  const stories = $derived<Story[]>(cat === 'feed' ? [] : (app.digest[cat]?.stories ?? app.home?.news.digest?.[cat] ?? []));
+  const items = $derived(isNews(cat) ? (app.news[cat] ?? app.home?.news[cat] ?? []) : []);
+  const stories = $derived<Story[]>(isNews(cat) ? (app.digest[cat]?.stories ?? app.home?.news.digest?.[cat] ?? []) : []);
   const x = $derived(app.x ?? app.home?.x ?? null);
   // headlines already covered by a top story aren't repeated below
   const covered = $derived(new Set(stories.flatMap((s) => s.sources.map((x) => x.url))));
@@ -24,10 +28,14 @@
 <main class="app stack page-enter">
   <header><div class="label">Updated {ago(app.home?.news.updatedAt)}</div><h1>News</h1></header>
   <div class="chips">
-    {#each CATS as c}<button class="chip" aria-pressed={cat === c} onclick={() => (cat = c)}>{NAMES[c]}</button>{/each}
+    {#each CATS as c}<button class="chip" aria-pressed={cat === c} onclick={() => (cat = c)}>{NAMES[c]}{#if c === 'saved' && unread} · {unread}{/if}</button>{/each}
   </div>
 
-  {#if cat === 'feed'}
+  {#if cat === 'saved'}
+    <SavedList />
+  {:else if cat === 'yt'}
+    <YouTube />
+  {:else if cat === 'feed'}
     {#if x?.digest?.lines.length}
       <section class="card">
         <div class="card__title"><h3>What your people are saying</h3><span class="label ai"><Icon name="sparkle" size={12} /> AI</span></div>
@@ -46,6 +54,7 @@
   {#if stories.length}
     <div class="label row-label"><Icon name="sparkle" size={12} /> Top stories · summarised by AI</div>
     {@const lead = stories[0]!}
+    <div class="savewrap">
     <button class="card lead" onclick={() => openUrl(lead.url)}>
       {#if lead.image}<img class="lead__img" src={lead.image} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror={hide} />{/if}
       <div class="lead__body">
@@ -54,8 +63,11 @@
         <span class="meta">{srcLine(lead)} · {ago(lead.publishedAt)}</span>
       </div>
     </button>
+    <button class="save" onclick={() => saveForLater(lead.url, lead.title)} aria-label="Read later"><Icon name="bookmark" size={16} /></button>
+    </div>
     <section class="card">
       {#each stories.slice(1) as s (s.url)}
+        <div class="savewrap row-wrap">
         <button class="story" onclick={() => openUrl(s.url)}>
           <div class="story__text">
             <b>{s.title}</b>
@@ -64,6 +76,8 @@
           </div>
           {#if s.image}<img src={s.image} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror={hide} />{/if}
         </button>
+        <button class="save sm" onclick={() => saveForLater(s.url, s.title)} aria-label="Read later"><Icon name="bookmark" size={14} /></button>
+        </div>
       {/each}
     </section>
   {/if}
@@ -71,6 +85,7 @@
   <div class="label row-label">Latest</div>
   <section class="card">
     {#each latest as n (n.id)}
+      <div class="savewrap row-wrap">
       <button class="item" onclick={() => openUrl(n.url)}>
         <div class="item__text">
           <b>{n.title}</b>
@@ -79,6 +94,8 @@
         </div>
         {#if n.image}<img src={n.image} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror={hide} />{/if}
       </button>
+      <button class="save sm" onclick={() => saveForLater(n.url, n.title)} aria-label="Read later"><Icon name="bookmark" size={14} /></button>
+      </div>
     {:else}
       <p class="muted">No headlines yet.</p>
     {/each}
@@ -103,8 +120,15 @@
 
   .story, .item { display: grid; grid-template-columns: 1fr auto; gap: var(--s3); width: 100%; text-align: left; padding: var(--s3) 0;
                   border-bottom: 1px solid var(--line); content-visibility: auto; contain-intrinsic-size: auto 96px; }
-  .story:first-child, .item:first-child { padding-top: 0; }
-  .story:last-child, .item:last-child { border-bottom: 0; padding-bottom: 0; }
+  .row-wrap:first-child .story, .row-wrap:first-child .item { padding-top: 0; }
+  .row-wrap:last-child .story, .row-wrap:last-child .item { border-bottom: 0; padding-bottom: 0; }
+  .savewrap { position: relative; }
+  .save { position: absolute; right: 10px; top: 10px; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 999px;
+          background: rgba(0,0,0,.55); color: #fff; }
+  .save.sm { top: auto; right: 0; bottom: 8px; width: 30px; height: 30px; background: var(--surface-2); color: var(--text-3); }
+  .row-wrap:last-child .save.sm { bottom: -4px; }
+  .story__text, .item__text { padding-right: 4px; }
+  .story .meta, .item .meta { padding-right: 34px; }
   .story__text, .item__text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .story b, .item b { font-weight: 650; line-height: 1.35; }
   .story p, .item p { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.4;

@@ -93,6 +93,26 @@ def following_top(scan, top):
     return [r for r in rows if isinstance(r, dict)]
 
 
+def yt_transcripts(server, token):
+    """Fetch subtitles for new YouTube videos (yt-dlp via Agent-Reach) so the server can summarise them."""
+    pending = api(server, token, "/v1/yt/pending").get("videos", [])
+    for v in pending:
+        p = subprocess.run([AGENT_REACH, "youtube", "subtitle", v["url"]], capture_output=True, text=True, timeout=240)
+        text = None
+        try:
+            d = json.loads(p.stdout)
+            if d.get("ok"):
+                text = "\n".join((it.get("text") or "") for it in d.get("items", [])).strip() or None
+            elif (d.get("error") or {}).get("code") in STOP_CODES:
+                break
+            else:
+                text = ""  # no subtitles for this video: tell the server so it uses the description
+        except ValueError:
+            continue
+        api(server, token, "/v1/yt/transcript", {"id": v["id"], "text": text})
+    return len(pending)
+
+
 def main():
     force = "--force" in sys.argv
     server, token = conf()
@@ -121,6 +141,13 @@ def main():
         if payload["cricket"] or payload["feed"]:
             api(server, token, "/v1/x/ingest", payload)
         return 2
+
+    try:
+        n = yt_transcripts(server, token)
+        if n:
+            print(f"youtube: {n} transcript(s) checked")
+    except Exception as e:  # never let YouTube break the X run
+        print(f"youtube: {e}", file=sys.stderr)
 
     st.pop("error", None)
     save_state(st)

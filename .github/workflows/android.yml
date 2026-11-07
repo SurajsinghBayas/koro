@@ -45,6 +45,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check
       - run: bunx tauri android init --ci
+      - name: App icon (holographic K)
+        run: cp -R src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
       - name: Allow http:// (LAN / USB testing against the Mac)
         run: |
           set -euo pipefail

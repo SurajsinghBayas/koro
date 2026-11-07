@@ -12,7 +12,17 @@ class KoroMessagingService : FirebaseMessagingService() {
         val title = d["title"] ?: m.notification?.title ?: "Koro"
         val body = d["body"] ?: m.notification?.body ?: ""
         val tag = d["tag"]
-        if (d["kind"] == "x") {
+        if (d["kind"] == "clip") {
+            val text = d["text"] ?: body
+            val url = d["url"]?.takeIf { it.isNotEmpty() }
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                try {
+                    val cm = getSystemService(android.content.ClipboardManager::class.java)
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("From Mac", text))
+                } catch (_: Exception) { }
+            }
+            Notifier.clip(this, title, body, url)
+        } else if (d["kind"] == "x") {
             val ch = if (d["channel"] == Notifier.CH_X_DIGEST) Notifier.CH_X_DIGEST else Notifier.CH_X_BREAKING
             Notifier.x(this, (tag ?: title).hashCode(), ch, title, body, d["image"]?.let { fetchImage(it) }, d["url"])
         } else if (d["kind"] == "match" && tag != null) {

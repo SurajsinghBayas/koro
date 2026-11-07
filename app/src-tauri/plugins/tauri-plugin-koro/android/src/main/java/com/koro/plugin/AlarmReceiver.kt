@@ -20,7 +20,8 @@ class AlarmReceiver : BroadcastReceiver() {
                 val id = i.getStringExtra("id") ?: return
                 val title = i.getStringExtra("title") ?: "Reminder"
                 val repeat = i.getStringExtra("repeat") ?: ""
-                Notifier.show(c, id.hashCode(), Notifier.CH_REMINDERS, "⏰ $title", "Koro reminder")
+                if (id.startsWith("water:")) Notifier.water(c, title)
+                else Notifier.show(c, id.hashCode(), Notifier.CH_REMINDERS, "⏰ $title", "Koro reminder")
                 if (repeat == "daily") Alarms.reminder(c, id, title, i.getLongExtra("at", System.currentTimeMillis()) + 86_400_000L, repeat)
                 else Prefs.dropReminder(c, id)
             }

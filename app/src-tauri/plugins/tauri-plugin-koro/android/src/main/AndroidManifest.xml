@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
 
     <application>
         <receiver android:name="com.koro.plugin.AlarmReceiver" android:exported="false" />
@@ -30,6 +32,33 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+        <receiver android:name="com.koro.plugin.TasksWidget" android:exported="false" android:label="Koro · To-do">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/koro_widget_tasks" />
+        </receiver>
+        <receiver android:name="com.koro.plugin.HabitsWidget" android:exported="false" android:label="Koro · Habits">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/koro_widget_habits" />
+        </receiver>
+        <receiver android:name="com.koro.plugin.GroceryWidget" android:exported="false" android:label="Koro · Grocery">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/koro_widget_grocery" />
+        </receiver>
+        <receiver android:name="com.koro.plugin.MusicWidget" android:exported="false" android:label="Koro · Holo player">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/koro_widget_music" />
+        </receiver>
+        <receiver android:name="com.koro.plugin.WidgetActionReceiver" android:exported="false" />
+        <!-- "Koro" in the share sheet: send links/text to the Mac, read later, add as task -->
+        <activity android:name="com.koro.plugin.ShareActivity" android:exported="true" android:label="Koro"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true"
+            android:taskAffinity="" android:noHistory="true">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
         <provider
             android:name="com.koro.plugin.KoroInitProvider"
             android:authorities="${applicationId}.koroinit"

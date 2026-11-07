@@ -49,10 +49,10 @@ async function accessToken(): Promise<string> {
   return j.access_token;
 }
 
-export type Alert = { kind: 'match' | 'system' | 'x'; title: string; body: string; tag?: string; buzz?: boolean; data?: Record<string, string> };
+export type Alert = { kind: 'match' | 'system' | 'x' | 'clip'; title: string; body: string; tag?: string; buzz?: boolean; data?: Record<string, string> };
 
-export async function notify(db: Db, alert: Alert) {
-  await db.query('insert into inbox (kind, title, body, data) values ($1,$2,$3,$4)', [
+export async function notify(db: Db, alert: Alert, opts: { inbox?: boolean } = {}) {
+  if (opts.inbox !== false) await db.query('insert into inbox (kind, title, body, data) values ($1,$2,$3,$4)', [
     alert.kind, alert.title, alert.body, JSON.stringify({ tag: alert.tag, buzz: !!alert.buzz, ...alert.data }),
   ]);
   if (!pushEnabled()) {

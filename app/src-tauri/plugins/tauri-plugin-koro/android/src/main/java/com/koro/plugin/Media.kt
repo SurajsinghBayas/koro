@@ -28,11 +28,14 @@ object Media {
         return list.firstOrNull { isPlaying(it) } ?: list.firstOrNull()
     }
 
+    fun artBitmap(md: MediaMetadata): Bitmap? = md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+        ?: md.getBitmap(MediaMetadata.METADATA_KEY_ART)
+        ?: md.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
+
+    fun playing(mc: MediaController) = isPlaying(mc)
+
     private fun art(md: MediaMetadata): String? {
-        val bmp = md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
-            ?: md.getBitmap(MediaMetadata.METADATA_KEY_ART)
-            ?: md.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
-            ?: return null
+        val bmp = artBitmap(md) ?: return null
         val max = 480f
         val scale = minOf(1f, max / maxOf(bmp.width, bmp.height))
         val out = if (scale < 1f) Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true) else bmp

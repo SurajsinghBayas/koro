@@ -76,9 +76,11 @@
         <span>{m.artist}{m.app ? ` · ${m.app}` : ''}</span>
         <i class="bar"><i style="transform: scaleX({pct})"></i></i>
       </div>
+      <button class="ctl ctl--ghost" onclick={(e) => { e.stopPropagation(); mediaControl('prev'); }} aria-label="Previous"><Icon name="prev" size={18} /></button>
       <button class="ctl" onclick={(e) => { e.stopPropagation(); mediaControl('toggle'); }} aria-label={m.playing ? 'Pause' : 'Play'}>
         <Icon name={m.playing ? 'pause' : 'play'} />
       </button>
+      <button class="ctl ctl--ghost" onclick={(e) => { e.stopPropagation(); mediaControl('next'); }} aria-label="Next"><Icon name="next" size={18} /></button>
     </div>
   {:else}
     <section role="group" aria-label="Now playing" class="holo" class:is-active={active} bind:this={card} style:--tint={tint || 'var(--sky-500)'}
@@ -170,5 +172,6 @@
   .mini__text b { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mini__text span { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mini .bar { margin-top: 4px; }
-  .mini .ctl { color: var(--text); }
+  .mini .ctl { color: var(--text); flex: none; }
+  .mini .ctl--ghost { width: 40px; color: var(--text-2); }
 </style>

@@ -19,8 +19,11 @@ async function tryCall<T>(cmd: string, args: Record<string, unknown> = {}, fallb
   }
 }
 
-export type Perms = { notifications: boolean; exactAlarm: boolean; dnd: boolean; usage: boolean; batteryUnrestricted: boolean; media: boolean };
+export type Perms = { notifications: boolean; exactAlarm: boolean; dnd: boolean; usage: boolean; batteryUnrestricted: boolean; media: boolean; calendar?: boolean; location?: boolean };
 export type PermKind = 'notifications' | 'exactAlarm' | 'dnd' | 'usage' | 'battery' | 'media';
+export type CalEvent = { id: string; title: string; begin: number; end: number; allDay: boolean; location: string; color: string; calendar: string };
+export type AppUse = { pkg: string; label: string; min: number };
+export type Op = { kind: 'tasks' | 'habits' | 'grocery' | 'water'; id?: string; ml?: number; at: number };
 export type NowPlaying = {
   access: boolean; active?: boolean; title?: string; artist?: string; album?: string; app?: string; package?: string;
   playing?: boolean; position?: number; duration?: number; canNext?: boolean; canPrev?: boolean; canSeek?: boolean; key?: string; art?: string;
@@ -89,6 +92,54 @@ export const native = {
   mediaControl: (action: 'toggle' | 'play' | 'pause' | 'next' | 'prev' | 'seek', pos = 0) => {
     if (!isNative) { if (action === 'toggle') __mockToggle(); else mockStart = Date.now(); return Promise.resolve(null); }
     return tryCall('mediaControl', { action, pos }, null);
+  },
+
+  /** Runtime permissions the app asks for itself (weather location, calendar). */
+  requestPermission: (kind: 'location' | 'calendar') => tryCall<{ granted: boolean }>('requestPermission', { kind }, { granted: false }),
+
+  async location(): Promise<{ granted: boolean; lat?: number; lon?: number }> {
+    if (isNative) return tryCall('location', {}, { granted: false });
+    return new Promise((res) => {
+      if (!navigator.geolocation) return res({ granted: true, lat: 19.076, lon: 72.8777 }); // browser preview: Mumbai
+      navigator.geolocation.getCurrentPosition((p) => res({ granted: true, lat: p.coords.latitude, lon: p.coords.longitude }),
+        () => res({ granted: true, lat: 19.076, lon: 72.8777 }), { timeout: 6000, maximumAge: 1_800_000 });
+    });
+  },
+
+  async calendar(days = 1): Promise<{ granted: boolean; events: CalEvent[] }> {
+    if (isNative) return tryCall('calendar', { days }, { granted: false, events: [] });
+    const t = new Date(); t.setHours(0, 0, 0, 0);
+    const at = (h: number, m = 0) => t.getTime() + (h * 60 + m) * 60_000;
+    return { granted: true, events: [ // browser preview
+      { id: 'a', title: 'Stand-up', begin: at(10), end: at(10, 15), allDay: false, location: 'Meet', color: '#4285F4', calendar: 'Work' },
+      { id: 'b', title: 'Lunch with Riya', begin: at(13, 30), end: at(14, 30), allDay: false, location: 'Bandra', color: '#0B8043', calendar: 'Personal' },
+      { id: 'c', title: 'Gym', begin: at(19), end: at(20), allDay: false, location: '', color: '#F4511E', calendar: 'Personal' },
+    ] };
+  },
+
+  /** Lets the share sheet and widgets reach the server without the WebView. */
+  setAuth: (server: string, token: string) => tryCall('setAuth', { server, token }, null),
+
+  async clipboardRead(): Promise<string> {
+    if (isNative) return (await tryCall<{ text: string }>('clipboardRead', {}, { text: '' })).text;
+    try { return await navigator.clipboard.readText(); } catch { return ''; }
+  },
+  async clipboardWrite(text: string) {
+    if (isNative) return tryCall('clipboardWrite', { text }, null);
+    try { await navigator.clipboard.writeText(text); } catch { /* ignore */ }
+    return null;
+  },
+
+  widgetData: (data: unknown) => tryCall('widgetData', { data }, null),
+  takeOps: async () => (await tryCall<{ ops: Op[] }>('takeOps', {}, { ops: [] })).ops,
+
+  async screenTimeTop(limit = 6): Promise<{ granted: boolean; apps: AppUse[]; totalMin: number }> {
+    if (isNative) return tryCall('screenTimeTop', { limit }, { granted: false, apps: [], totalMin: 0 });
+    return { granted: true, totalMin: 214, apps: [
+      { pkg: 'com.twitter.android', label: 'X', min: 48 }, { pkg: 'com.google.android.youtube', label: 'YouTube', min: 41 },
+      { pkg: 'com.whatsapp', label: 'WhatsApp', min: 35 }, { pkg: 'com.instagram.android', label: 'Instagram', min: 27 },
+      { pkg: 'com.spotify.music', label: 'Spotify', min: 22 }, { pkg: 'com.android.chrome', label: 'Chrome', min: 18 },
+    ] };
   },
 
   /** Initialise Firebase with the server-provided config and return the FCM token. */

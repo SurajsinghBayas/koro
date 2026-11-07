@@ -173,13 +173,11 @@
         {@const mine = d.id === app.cfg.deviceId}
         {@const pct = mine && app.battery ? app.battery.pct : d.battery_pct}
         {@const chg = mine && app.battery ? app.battery.charging : d.charging}
-        {#if pct !== null}
-          <div>
-            <div class="row between"><span>{d.name}</span><span class="num"><Odo value={pct} />%{chg ? ' · charging' : ''}</span></div>
-            <div class="meter mt-2" class:meter--gold={d.kind === 'mac'} class:meter--low={pct < 20 && !chg}><span style="--value:{pct / 100}"></span></div>
-            {#if !mine}<div class="hint">{ago(d.battery_at)}</div>{/if}
-          </div>
-        {/if}
+        <div>
+          <div class="row between"><span>{d.name}</span>{#if pct !== null}<span class="num"><Odo value={pct} />%{chg ? ' · charging' : ''}</span>{/if}</div>
+          {#if pct !== null}<div class="meter mt-2" class:meter--gold={d.kind === 'mac'} class:meter--low={pct < 20 && !chg}><span style="--value:{pct / 100}"></span></div>{/if}
+          <div class="hint">{pct === null ? 'No battery data yet' : mine && app.battery ? 'Updated just now' : `Updated ${ago(d.battery_at ?? d.last_seen)}`}</div>
+        </div>
       {/each}
     </section>
   {/if}

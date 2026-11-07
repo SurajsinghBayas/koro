@@ -32,11 +32,18 @@ export async function pairDevice(db: Db, ip: string, body: { code?: string; name
   failures.delete(ip);
   const token = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url');
   const id = crypto.randomUUID();
-  const name = (body.name || 'Device').slice(0, 60);
   const kind = ['phone', 'mac', 'other'].includes(body.kind ?? '') ? body.kind! : 'other';
+  // One phone and one Mac: re-pairing replaces the old entry (and keeps the name you gave it).
+  const prev = kind === 'other' ? [] : await db.query<{ id: string; name: string }>(
+    'select id, name from devices where kind = $1 order by last_seen desc nulls last', [kind]);
+  const name = (prev[0]?.name || body.name || 'Device').slice(0, 60);
   await db.query('insert into devices (id, name, kind, token_hash, last_seen) values ($1,$2,$3,$4, now())', [
     id, name, kind, await sha256(token),
   ]);
+  if (prev.length) {
+    await db.query(`delete from devices where kind = $1 and id <> $2`, [kind, id]);
+    cache.clear(); // old tokens stop working right away
+  }
   return { deviceId: id, token, name, kind };
 }
 

@@ -116,7 +116,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 :focus-visible { outline: var(--px) solid var(--accent); outline-offset: 2px; }
 
 /* pixel icons/sprites must stay crisp */
-.pixelated, .icon { image-rendering: pixelated; shape-rendering: crispEdges; }
+.pixelated { image-rendering: pixelated; shape-rendering: crispEdges; }
+.icon { shape-rendering: geometricPrecision; flex: none; }
 
 /* ---------- Typography ----------
    Rule: ALL words use the clean sans (Geist). The pixel font is only for big

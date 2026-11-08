@@ -51,9 +51,8 @@ object MacMedia {
             artFile(c).delete()
             if (artUrl.startsWith("https://")) fetchArt(artUrl)?.let { b -> artFile(c).outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) } }
         }
-        // follow the music: Mac starts playing while the phone is quiet → the widget switches to the Mac
-        val phonePlaying = Media.granted(c) && Media.current(c)?.let { Media.playing(it) } == true
-        if (title.isNotEmpty() && playing && !phonePlaying) setSource(c, "mac")
+        // follow the music: the Mac playing wins (even if the phone plays too)
+        if (title.isNotEmpty() && playing) setSource(c, "mac")
         if (title.isEmpty() && source(c) == "mac") setSource(c, "phone")
         Widgets.updateMusic(c)
         notifyMac(c)

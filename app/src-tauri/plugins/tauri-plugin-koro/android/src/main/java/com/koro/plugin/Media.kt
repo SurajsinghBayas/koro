@@ -120,6 +120,15 @@ object Media {
         }
     }
 
+    /** Open a music.youtube.com / youtube.com link in that app (a watch link starts playing right away). */
+    fun openIn(c: Context, uri: String, pkg: String): Boolean {
+        if (!uri.startsWith("https://")) return false
+        val i = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(uri)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        return try { c.startActivity(android.content.Intent(i).setPackage(pkg)); true } catch (_: Exception) {
+            try { c.startActivity(i); true } catch (_: Exception) { false }
+        }
+    }
+
     fun control(c: Context, action: String, pos: Long): Boolean {
         val t = (current(c) ?: return false).transportControls
         when (action) {

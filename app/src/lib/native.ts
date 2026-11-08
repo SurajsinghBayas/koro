@@ -103,7 +103,7 @@ export const native = {
   mediaQueue: (): Promise<MediaQueue> => (isNative ? tryCall<MediaQueue>('mediaQueue', {}, { items: [], customs: [] }) : Promise.resolve({
     items: [{ id: 1, title: 'Kesariya', subtitle: 'Arijit Singh', active: true }, { id: 2, title: 'Apna Bana Le', subtitle: 'Arijit Singh', active: false }, { id: 3, title: 'Tum Hi Ho', subtitle: 'Arijit Singh', active: false }],
     customs: [{ action: 'like', name: 'Like' }, { action: 'shuffle', name: 'Shuffle' }, { action: 'repeat', name: 'Repeat' }], package: 'com.google.android.apps.youtube.music' })),
-  mediaAction: (a: { type: 'queue'; id: number } | { type: 'custom'; action: string } | { type: 'search'; query: string; pkg?: string }) =>
+  mediaAction: (a: { type: 'queue'; id: number } | { type: 'custom'; action: string } | { type: 'search'; query: string; pkg?: string } | { type: 'open'; uri: string; pkg: string }) =>
     tryCall<{ ok: boolean }>('mediaAction', a, { ok: false }),
   /** Speech to text (Android recogniser). Browser preview: a prompt box. */
   listen: async (): Promise<{ text: string; error?: string }> => (isNative ? tryCall('listen', {}, { text: '' }) : { text: prompt('Say it (browser preview):') ?? '' }),

@@ -390,6 +390,7 @@ class KoroPlugin(private val activity: Activity) : Plugin(activity) {
             "queue" -> Media.skipTo(ctx, a.optLong("id"))
             "custom" -> Media.custom(ctx, a.optString("action"))
             "search" -> Media.playSearch(ctx, a.optString("query"), a.optString("pkg", "com.google.android.apps.youtube.music"))
+            "open" -> Media.openIn(ctx, a.optString("uri"), a.optString("pkg", "com.google.android.apps.youtube.music"))
             else -> false
         }
         invoke.resolve(JSObject().put("ok", ok))

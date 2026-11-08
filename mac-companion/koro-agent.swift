@@ -104,27 +104,44 @@ let mrInfo: MRInfo? = {
 }()
 var macMediaSource = ""   // app name of what we last reported, so play/pause goes to the right place
 func running(_ id: String) -> Bool { !NSRunningApplication.runningApplications(withBundleIdentifier: id).isEmpty }
-func pidOf(_ id: String) -> Int32? { NSRunningApplication.runningApplications(withBundleIdentifier: id).first?.processIdentifier }
 
-/// Is this process holding an audio assertion right now (i.e. making sound)?
-func makingSound(_ pid: Int32) -> Bool {
+/// Is this app making sound right now? Reads power assertions (each one is a block of lines: the owner, then
+/// "Created for PID: n." and resources). Safari/WebKit name the app ("application.com.apple.Safari… Media Playback").
+func makingSound(_ bundleId: String) -> Bool {
+    let pids = Set(NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).map { $0.processIdentifier })
     let p = Process(), out = Pipe(); p.executableURL = URL(fileURLWithPath: "/usr/bin/pmset"); p.arguments = ["-g", "assertions"]; p.standardOutput = out
     guard (try? p.run()) != nil else { return false }
-    let s = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""; p.waitUntilExit()
-    return s.split(separator: "\n").contains { l in
-        let low = l.lowercased()
-        return (low.contains("audio") || low.contains("playing")) && (l.contains("pid \(pid)(") || l.contains("Created for PID: \(pid)."))
+    let text = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""; p.waitUntilExit()
+    var blocks: [String] = [], cur = ""
+    for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+        if line.hasPrefix("   pid ") { if !cur.isEmpty { blocks.append(cur) }; cur = String(line) } else { cur += "\n" + line }
+    }
+    blocks.append(cur)
+    return blocks.contains { b in
+        let low = b.lowercased()
+        guard low.contains("media playback") || low.contains("playing audio") || low.contains("audio-out") || low.contains("video") else { return false }
+        if b.contains("application.\(bundleId).") { return true }
+        return pids.contains { b.contains("Created for PID: \($0).") || b.contains("pid \($0)(") }
     }
 }
 
+/// "(500) Pal Pal (with Talwiinder) | YouTube Music" → ("Pal Pal (with Talwiinder)", "")
 func cleanTabTitle(_ t: String) -> (String, String) {
     var s = t.replacingOccurrences(of: #"^\(\d+\)\s*"#, with: "", options: .regularExpression)
-    for suf in [" - YouTube Music", " - YouTube"] where s.hasSuffix(suf) { s = String(s.dropLast(suf.count)) }
+    for suf in [" | YouTube Music", " - YouTube Music", " - YouTube", " | Spotify", " - Spotify", " | SoundCloud", " | JioSaavn", " – Apple Music", " - Apple Music"] where s.hasSuffix(suf) {
+        s = String(s.dropLast(suf.count))
+    }
+    if s.hasPrefix("Spotify – ") { s = String(s.dropFirst(10)) }
     let parts = s.components(separatedBy: " • ")
     return parts.count > 1 ? (parts[0], parts[1]) : (s, "")
 }
 
+/// Media pages, best first: a YouTube Music song beats a parked YouTube video.
+let mediaSites: [(String, String)] = [("music.youtube.com", "YouTube Music"), ("open.spotify.com", "Spotify"), ("music.apple.com", "Apple Music"),
+                                      ("soundcloud.com", "SoundCloud"), ("jiosaavn.com", "JioSaavn"), ("youtube.com/watch", "YouTube")]
+
 func nowPlayingMac() -> [String: Any]? {
+    var found: [[String: Any]] = []
     // 1) the system's Now Playing (only answers on macOS versions that still allow it)
     if let get = mrInfo {
         var info: [String: Any] = [:]
@@ -136,40 +153,44 @@ func nowPlayingMac() -> [String: Any]? {
                     "playing": ((info["kMRMediaRemoteNowPlayingInfoPlaybackRate"] as? Double) ?? 0) > 0]
         }
     }
-    // 2) Music / Spotify
+    // 2) Music / Spotify apps
     for (id, app) in [("com.spotify.client", "Spotify"), ("com.apple.Music", "Music")] where running(id) {
         let extra = app == "Spotify" ? " & \"\t\" & artwork url of current track" : ""
         if let r = osa("tell application \"\(app)\" to if player state is not stopped then return (player state as string) & \"\t\" & name of current track & \"\t\" & artist of current track\(extra)"),
            !r.isEmpty {
             let f = r.components(separatedBy: "\t")
-            if f.count >= 3 { return ["title": f[1], "artist": f[2], "app": app, "playing": f[0] == "playing", "art": f.count > 3 ? f[3] : ""] }
+            if f.count >= 3 { found.append(["title": f[1], "artist": f[2], "app": app, "playing": f[0] == "playing", "art": f.count > 3 ? f[3] : ""]) }
         }
     }
-    // 3) a YouTube / YouTube Music tab in a browser
-    let browsers = [("com.google.Chrome", "Google Chrome"), ("company.thebrowser.Browser", "Arc"), ("com.brave.Browser", "Brave Browser"), ("com.apple.Safari", "Safari")]
+    // 3) a media tab in a browser (playing = that browser is making sound)
+    let browsers = [("com.apple.Safari", "Safari"), ("com.google.Chrome", "Google Chrome"), ("company.thebrowser.Browser", "Arc"), ("com.brave.Browser", "Brave Browser")]
     for (id, name) in browsers where running(id) {
         let titleProp = id == "com.apple.Safari" ? "name" : "title" // Safari tabs call it "name"
         let script = """
+        set out to ""
         tell application "\(name)"
           repeat with w in windows
             repeat with t in tabs of w
               set u to URL of t
-              if u contains "music.youtube.com/watch" or u contains "youtube.com/watch" then return u & "\t" & (\(titleProp) of t)
+              if u contains "youtube.com" or u contains "spotify.com" or u contains "music.apple.com" or u contains "soundcloud.com" or u contains "jiosaavn.com" then set out to out & u & "\t" & (\(titleProp) of t) & "\n"
             end repeat
           end repeat
         end tell
-        return ""
+        return out
         """
-        if let r = osa(script), !r.isEmpty {
-            let f = r.components(separatedBy: "\t")
-            let (title, artist) = cleanTabTitle(f.count > 1 ? f[1] : "")
-            if title.isEmpty { continue }
-            let ytm = f[0].contains("music.youtube.com")
-            return ["title": title, "artist": artist, "app": ytm ? "YouTube Music (\(name))" : "YouTube (\(name))", "url": f[0],
-                    "playing": pidOf(id).map(makingSound) ?? false, "browser": name]
+        guard let r = osa(script), !r.isEmpty else { continue }
+        let tabs = r.split(separator: "\n").map { $0.components(separatedBy: "\t") }.filter { $0.count > 1 }
+        let sound = makingSound(id)
+        for (site, label) in mediaSites {
+            guard let t = tabs.first(where: { $0[0].contains(site) }) else { continue }
+            let (title, artist) = cleanTabTitle(t[1])
+            if title.isEmpty || title == label || title == "YouTube" { continue } // e.g. YT Music home with nothing loaded
+            found.append(["title": title, "artist": artist, "app": "\(label) · \(name)", "url": t[0], "playing": sound, "browser": name])
+            break
         }
     }
-    return nil
+    // whatever is actually playing wins; otherwise the first paused thing
+    return found.first { ($0["playing"] as? Bool) == true } ?? found.first
 }
 
 var lastMacMedia = "", lastMacMediaAt = Date.distantPast
@@ -488,6 +509,10 @@ func sendTab() {
 }
 
 let menuBar = Menu()
+// Play/pause for YouTube Music / YouTube in a browser goes through the keyboard media keys, which needs Accessibility.
+if !AXIsProcessTrusted() {
+    _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+}
 log("Koro agent running → \(server)  clipboard sync: \(clipSyncOn() ? "on" : "off")")
 Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { _ in checkClipboard() }
 let mediaQueue = DispatchQueue(label: "koro.media")

@@ -9,9 +9,9 @@
 
   const pm = $derived(app.media);
   const phoneOn = $derived(!!pm?.active && !!pm.title);
-  // phone idle but the Mac is playing → the same holo card shows the Mac and its buttons control the Mac
+  // the Mac is playing (or the phone is idle) → the same holo card shows the Mac and its buttons control the Mac
   const mm = $derived(app.mac?.media ?? app.home?.mac?.media ?? null);
-  const isMac = $derived(!phoneOn && !!mm?.title);
+  const isMac = $derived(!!mm?.title && (mm.playing || !phoneOn)); // both playing → the Mac wins
   const m = $derived(isMac && mm ? { ...pm, access: true, active: true, title: mm.title, artist: mm.artist, app: `Mac · ${mm.app}`, art: mm.art || '', playing: mm.playing,
     album: '', duration: 0, position: 0, at: Date.now(), canPrev: true, canNext: true } : pm);
   const ctl = (c: 'prev' | 'toggle' | 'next') => (isMac ? void macSend({ type: 'cmd', cmd: c }) : mediaControl(c));

@@ -14,6 +14,7 @@ import { CRICKET_HANDLES, getX, ingest } from '../services/x.ts';
 import { clipToPhone, cmdToPhone, currentSeq, MAC_CMDS, macMediaNow, macOnline, setMacMedia, nextEvents, phone, PHONE_CMDS, pushToMac, status as macStatus } from '../services/mac.ts';
 import { addSaved } from '../services/saved.ts';
 import { getWeather } from '../services/weather.ts';
+import { findPlayable } from '../services/music.ts';
 import { getLyrics } from '../services/lyrics.ts';
 import { addChannel, explainVideo, getYt, pendingTranscripts, putTranscript, refreshYt, removeChannel } from '../services/yt.ts';
 
@@ -185,6 +186,14 @@ export function apiRoutes(db: Db) {
     if (!b.success) return c.json({ error: 'bad media' }, 400);
     await setMacMedia(db, b.data);
     return c.json({ ok: true });
+  });
+
+  /** Best song / video for "play X" (the app opens it as a watch link, which YT Music plays right away). */
+  r.get('/music/find', async (c) => {
+    const q = (c.req.query('q') ?? '').trim().slice(0, 200);
+    const target = c.req.query('target') === 'yt' ? 'yt' : 'music';
+    if (!q) return c.json({ error: 'q required' }, 400);
+    return c.json({ found: await findPlayable(q, target) });
   });
 
   // ---------- Mac → phone ----------

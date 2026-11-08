@@ -30,7 +30,8 @@ class KoroMediaListener : NotificationListenerService() {
         val key = "$title|$artist|$playing"
         if (key == lastReport) return
         lastReport = key
-        if (playing) { MacMedia.setSource(this, "phone"); Widgets.updateMusic(this) } // phone started playing → widget follows it
+        // phone started playing → the widget follows it, unless the Mac is playing (the Mac wins)
+        if (playing && MacMedia.state(this)?.playing != true) { MacMedia.setSource(this, "phone"); Widgets.updateMusic(this) }
         val app = mc?.packageName?.let { p -> try { packageManager.getApplicationLabel(packageManager.getApplicationInfo(p, 0)).toString() } catch (_: Exception) { p } } ?: ""
         Thread { Net.post(this, "/v1/phone/status", org.json.JSONObject().put("title", title).put("artist", artist).put("app", app).put("playing", playing)) }.start()
     }

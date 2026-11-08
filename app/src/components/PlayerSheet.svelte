@@ -14,7 +14,14 @@
   let q = $state('');
   let target = $state<'music' | 'yt'>('music');
   const PKG = { music: 'com.google.android.apps.youtube.music', yt: 'com.google.android.youtube' };
-  const MIXES = ['My Supermix', 'Liked music', 'Discover Mix', 'New Release Mix', 'Chill', 'Workout'];
+  // Liked music opens your own list; the rest start a radio from the best matching song
+  const MIXES: { label: string; q?: string; uri?: string }[] = [
+    { label: 'Liked music', uri: 'https://music.youtube.com/watch?list=LM' },
+    { label: 'Arijit Singh radio', q: 'Arijit Singh' }, { label: 'Punjabi hits', q: 'Punjabi hits 2024' },
+    { label: 'Lofi chill', q: 'lofi chill hindi' }, { label: 'Workout', q: 'workout gym motivation songs' },
+    { label: 'Romantic', q: 'bollywood romantic songs' },
+  ];
+  let busy = $state(false);
 
   const m = $derived(app.media);
   let now = $state(Date.now());
@@ -47,7 +54,9 @@
   let box: HTMLElement | undefined = $state();
   $effect(() => {
     if (cur < 0 || !box || tab !== 'lyrics') return;
-    box.querySelector<HTMLElement>(`[data-i="${cur}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    // scroll ONLY the lyrics box (scrollIntoView also scrolled the fixed player and pushed the header off-screen)
+    const el = box.querySelector<HTMLElement>(`[data-i="${cur}"]`);
+    if (el) box.scrollTo({ top: Math.max(0, el.offsetTop - box.clientHeight * 0.4 + el.offsetHeight / 2), behavior: 'smooth' });
   });
 
   const iconFor = (name: string) => /dislike/i.test(name) ? 'thumbdown' : /like/i.test(name) ? 'heart' : /shuffle/i.test(name) ? 'shuffle' : /repeat/i.test(name) ? 'repeat' : 'sparkle';
@@ -55,10 +64,25 @@
   const label = (name: string) => name.replace(/\s+(on|off)$/i, '');
 
   async function play(query: string) {
-    if (!query.trim()) return;
-    const r = await native.mediaAction({ type: 'search', query: query.trim(), pkg: PKG[target] });
-    toast(r.ok ? `Playing “${query.trim()}” in ${target === 'music' ? 'YT Music' : 'YouTube'}` : 'Could not start playback');
-    if (r.ok) { q = ''; setTimeout(loadQueue, 3000); }
+    query = query.trim();
+    if (!query || busy) return;
+    busy = true;
+    const music = target === 'music';
+    try {
+      // YT Music ignores "play from search" from other apps, but a watch link plays at once (+ a radio of similar songs)
+      const r = paired() ? await request<{ found: { id: string; title: string; artist: string } | null }>(app.cfg.server,
+        `/v1/music/find?${new URLSearchParams({ q: query, target })}`, { token: app.cfg.token, timeoutMs: 15_000 }).catch(() => null) : null;
+      const f = r?.data?.found;
+      const uri = f ? (music ? `https://music.youtube.com/watch?v=${f.id}&list=RDAMVM${f.id}` : `https://www.youtube.com/watch?v=${f.id}`)
+        : (music ? 'https://music.youtube.com/search?q=' : 'https://www.youtube.com/results?search_query=') + encodeURIComponent(query);
+      const ok = (await native.mediaAction({ type: 'open', uri, pkg: PKG[target] })).ok;
+      toast(!ok ? 'Could not open ' + (music ? 'YT Music' : 'YouTube') : f ? `▶ ${f.title}${f.artist ? ' · ' + f.artist : ''}` : `Showing results for “${query}”`);
+      if (ok) { q = ''; setTimeout(loadQueue, 4000); }
+    } finally { busy = false; }
+  }
+  async function mix(x: { label: string; q?: string; uri?: string }) {
+    if (x.uri) { const ok = (await native.mediaAction({ type: 'open', uri: x.uri, pkg: PKG.music })).ok; toast(ok ? `▶ ${x.label}` : 'Could not open YT Music'); }
+    else await play(x.q ?? x.label);
   }
   async function custom(action: string) {
     native.vibrate(8);
@@ -150,24 +174,24 @@
           <button disabled={!q.trim()} aria-label="Play"><Icon name="play" size={18} /></button>
         </form>
         {#if target === 'music'}
-          <div class="mixes">{#each MIXES as x}<button onclick={() => play(x)}>{x}</button>{/each}</div>
+          <div class="mixes">{#each MIXES as x}<button disabled={busy} onclick={() => mix(x)}>{x.label}</button>{/each}</div>
         {/if}
-        <p class="note">Koro asks {target === 'music' ? 'YT Music' : 'YouTube'} to play the best match, like “Hey Google, play…”. Premium and background play keep working.</p>
+        <p class="note">{busy ? 'Finding it…' : `Koro finds the best match and opens it in ${target === 'music' ? 'YT Music with a radio of similar songs' : 'YouTube'}. Your Premium keeps working.`}</p>
       </div>
     {/if}
   </div>
 </div>
 
 <style>
-  .player { --g: 20px; position: fixed; inset: 0; z-index: 55; display: flex; flex-direction: column; overflow: hidden; color: #fff;
+  .player { --g: 20px; position: fixed; inset: 0; z-index: 55; display: flex; flex-direction: column; overflow: clip; color: #fff;
             background: #05070E; animation: rise var(--t-med) var(--ease-out); padding-top: var(--safe-top); }
   @keyframes rise { from { transform: translateY(32px); opacity: 0; } }
   .backdrop { position: absolute; inset: -40px; z-index: 0; }
   .backdrop img { width: 100%; height: 100%; object-fit: cover; filter: blur(48px) saturate(1.5); opacity: .55; transform: scale(1.2); }
   .backdrop::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(5,7,14,.35), rgba(5,7,14,.82) 45%, #05070E 85%); }
-  .foil { position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: .18; mix-blend-mode: color-dodge;
+  .foil { position: absolute; inset: 0; z-index: 0; pointer-events: none; mix-blend-mode: color-dodge;
           background: repeating-linear-gradient(115deg, #F2C14E 0 6%, #5EC8FF 12%, #C38BFF 18%, #F2C14E 24%); background-size: 300% 300%;
-          animation: sheen 14s linear infinite; }
+          animation: sheen 14s linear infinite; opacity: .1; }
   @keyframes sheen { to { background-position: 300% 0; } }
   .player > :not(.backdrop):not(.foil) { position: relative; z-index: 1; }
 
@@ -206,12 +230,12 @@
   .seg3 button, .seg2 button { height: 36px; border-radius: 10px; font-weight: 650; font-size: var(--fs-sm); color: rgba(255,255,255,.6); }
   .seg3 button.on, .seg2 button.on { color: #fff; background: linear-gradient(135deg, rgba(94,200,255,.28), rgba(195,139,255,.22)); box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
 
-  .body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px var(--g) calc(var(--safe-bottom) + 24px); }
-  .body.fade { mask-image: linear-gradient(transparent, #000 14%, #000 80%, transparent); }
+  .body { position: relative; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px var(--g) calc(var(--safe-bottom) + 24px); }
+  .body.fade { mask-image: linear-gradient(transparent, #000 10%, #000 78%, transparent); }
   .empty { padding: 40px 0; text-align: center; color: rgba(255,255,255,.55); line-height: 1.5; }
 
-  .lyr { display: flex; flex-direction: column; gap: 6px; padding: 22vh 0 30vh; }
-  .lyr button { text-align: left; font-size: 1.45rem; font-weight: 750; line-height: 1.3; color: rgba(255,255,255,.32); padding: 2px 0;
+  .lyr { display: flex; flex-direction: column; gap: 10px; padding: 12vh 0 40vh; }
+  .lyr button { text-align: left; font-size: 1.3rem; font-weight: 750; line-height: 1.3; letter-spacing: -.01em; color: rgba(255,255,255,.32); padding: 2px 0;
                 transition: color .3s, transform .3s, filter .3s; transform-origin: left center; filter: blur(.4px); }
   .lyr button.past { color: rgba(255,255,255,.22); }
   .lyr button.on { color: #fff; transform: scale(1.04); filter: none; text-shadow: 0 0 24px rgba(94,200,255,.5); }
@@ -236,6 +260,7 @@
   .find button { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; background: #F2C14E; color: #1F1500; }
   .find button:disabled { opacity: .35; }
   .mixes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .mixes button:disabled { opacity: .5; }
   .mixes button { height: 52px; border-radius: 14px; font-weight: 650; color: #fff; text-align: left; padding: 0 14px;
                   background: linear-gradient(135deg, rgba(94,200,255,.16), rgba(195,139,255,.14) 50%, rgba(242,193,78,.12)); box-shadow: inset 0 0 0 1px rgba(255,255,255,.1); }
   .note { font-size: 12px; color: rgba(255,255,255,.45); line-height: 1.5; }

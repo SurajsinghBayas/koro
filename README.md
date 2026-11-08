@@ -19,6 +19,16 @@ An AI daily brief, live cricket, news and YouTube digests, a holographic music p
 
 ---
 
+## See it in action
+
+<div align="center">
+
+<a href="docs/media/koro-reel.mp4"><img src="docs/media/koro-reel.gif" width="300" alt="koro reel: the koro logo drop, synced lyrics, the holographic player and the AI daily brief"></a>
+
+**[▶ Watch the full 27-second reel](docs/media/koro-reel.mp4)**: real screen recordings of the phone and the Mac, cut into a short film with [Remotion](https://www.remotion.dev/).
+
+</div>
+
 ## Why koro
 
 Your phone already has a weather app, a news app, a cricket app, a music app, a screen-time app, a notes app and a "find my" app, and your Mac doesn't talk to any of them. koro puts all of that in one fast, good-looking app that you own. A small server you run does the slow work (AI summaries, live scores, feeds), and a tiny menu-bar agent turns your Mac into something your phone can control.

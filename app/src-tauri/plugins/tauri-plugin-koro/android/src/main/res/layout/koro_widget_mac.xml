@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/koro_w_music_bg" android:clipToOutline="true">
+    <ImageView android:id="@+id/mc_glow" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:scaleType="fitXY" android:src="@drawable/koro_w_glow" android:alpha="0.45" android:contentDescription="@null" />
+    <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:src="@drawable/koro_w_holo" android:contentDescription="@null" />
+    <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:src="@drawable/koro_w_frame" android:contentDescription="@null" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="horizontal" android:gravity="center_vertical" android:paddingStart="14dp" android:paddingEnd="12dp">
+        <LinearLayout android:id="@+id/mc_info" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/mc_kick" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="💻 MAC" android:textSize="9sp" android:textStyle="bold" android:letterSpacing="0.16" android:textColor="#FFE8C46A" android:maxLines="1" />
+            <TextView android:id="@+id/mc_state" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:maxLines="1"
+                android:text="Online" android:textSize="15sp" android:textStyle="bold" android:textColor="#FFFFFFFF" />
+        </LinearLayout>
+        <ImageView android:id="@+id/mc_vdown" android:layout_width="42dp" android:layout_height="42dp" android:layout_marginStart="6dp" android:padding="11dp" android:background="@drawable/koro_w_btn" android:src="@drawable/koro_i_vdown"  android:contentDescription="Mac volume down" />
+        <ImageView android:id="@+id/mc_vup" android:layout_width="42dp" android:layout_height="42dp" android:layout_marginStart="6dp" android:padding="11dp" android:background="@drawable/koro_w_btn" android:src="@drawable/koro_i_vup"  android:contentDescription="Mac volume up" />
+        <ImageView android:id="@+id/mc_play" android:layout_width="48dp" android:layout_height="48dp" android:layout_marginStart="6dp" android:padding="12dp" android:background="@drawable/koro_w_btn_gold" android:src="@drawable/koro_i_playpause" android:tint="#FF1F1500" android:contentDescription="Play or pause on Mac" />
+        <ImageView android:id="@+id/mc_lock" android:layout_width="42dp" android:layout_height="42dp" android:layout_marginStart="6dp" android:padding="11dp" android:background="@drawable/koro_w_btn" android:src="@drawable/koro_i_lock"  android:contentDescription="Lock Mac" />
+        <ImageView android:id="@+id/mc_work" android:layout_width="42dp" android:layout_height="42dp" android:layout_marginStart="6dp" android:padding="11dp" android:background="@drawable/koro_w_btn" android:src="@drawable/koro_i_work"  android:contentDescription="Work mode" />
+    </LinearLayout>
+</FrameLayout>

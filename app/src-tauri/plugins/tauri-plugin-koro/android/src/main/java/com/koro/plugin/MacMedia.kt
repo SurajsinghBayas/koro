@@ -55,6 +55,7 @@ object MacMedia {
         if (title.isNotEmpty() && playing) setSource(c, "mac")
         if (title.isEmpty() && source(c) == "mac") setSource(c, "phone")
         Widgets.updateMusic(c)
+        MoreWidgets.mac(c)
         notifyMac(c)
     }
 

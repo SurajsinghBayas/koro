@@ -45,7 +45,7 @@ object Widgets {
     }
     private fun ids(c: Context, cls: Class<*>) = AppWidgetManager.getInstance(c).getAppWidgetIds(ComponentName(c, cls))
 
-    fun updateAll(c: Context) { for (k in listOf(TASKS, HABITS, GROCERY)) update(c, k); updateMusic(c) }
+    fun updateAll(c: Context) { for (k in listOf(TASKS, HABITS, GROCERY)) update(c, k); updateMusic(c); MoreWidgets.updateAll(c) }
 
     fun openApp(c: Context, req: Int): PendingIntent? {
         val i = c.packageManager.getLaunchIntentForPackage(c.packageName)?.apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP } ?: return null
@@ -203,6 +203,8 @@ class WidgetActionReceiver : BroadcastReceiver() {
         const val WATER = "com.koro.water.ADD"
         const val MAC = "com.koro.widget.MAC"
         const val SOURCE = "com.koro.widget.SOURCE"
+        const val WATER_W = "com.koro.widget.WATER"
+        const val MACCMD = "com.koro.widget.MACCMD"
     }
     override fun onReceive(c: Context, i: Intent) {
         when (i.action) {
@@ -215,6 +217,11 @@ class WidgetActionReceiver : BroadcastReceiver() {
             MAC -> {
                 val pending = goAsync()
                 Thread { try { MacMedia.send(c, i.getStringExtra("cmd") ?: "toggle") } finally { pending.finish() } }.start()
+            }
+            WATER_W -> MoreWidgets.addGlass(c)
+            MACCMD -> {
+                val pending = goAsync()
+                Thread { try { Net.post(c, "/v1/mac/send", JSONObject().put("type", "cmd").put("cmd", i.getStringExtra("cmd") ?: "toggle")) } finally { pending.finish() } }.start()
             }
             SOURCE -> {
                 MacMedia.setSource(c, if (MacMedia.source(c) == "mac") "phone" else "mac")

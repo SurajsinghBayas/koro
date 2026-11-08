@@ -2,6 +2,7 @@ import { localWallClock, parseQuick, type QuickResult } from '../../../shared/qu
 import { ApiError, request } from './api.ts';
 import { kvClear, kvGet, kvSet } from './kv.ts';
 import { native, type AppUse, type CalEvent, type NowPlaying } from './native.ts';
+import { wx } from './weather.ts';
 import { dayKey, localNowLabel, nowIso, uuid7 } from './util.ts';
 
 // ---------- types ----------
@@ -340,7 +341,7 @@ export async function loadWeather(ask = false) {
   if (loc.lat === undefined || loc.lon === undefined) return;
   try {
     const r = await request<Weather>(app.cfg.server, `/v1/weather?lat=${loc.lat.toFixed(3)}&lon=${loc.lon.toFixed(3)}`, { token: app.cfg.token });
-    if (r.data) { app.weather = r.data; void kvSet('weather', r.data); }
+    if (r.data) { app.weather = r.data; void kvSet('weather', r.data); scheduleWidgets(); }
   } catch { /* keep the last forecast */ }
 }
 export async function loadCalendar(ask = false) {
@@ -435,7 +436,32 @@ export async function pushWidgets() {
   const tasks = todayTasks().slice(0, 12).map((t) => ({ id: t.id, text: t.title, done: !!t.done_at, meta: t.due_time && !t.done_at ? t.due_time : '' }));
   const hs = habits().map((h) => ({ id: h.id, text: h.name, done: doneOn(h, today), meta: streak(h) ? `${streak(h)}🔥` : '' }));
   const grocery = groceryOpen().slice(0, 20).map((g) => ({ id: g.id, text: g.name, done: false, meta: '' }));
-  await native.widgetData({ tasks, habits: hs, grocery });
+  // Today / Water / Cricket / Mac widgets
+  const w = app.weather;
+  const WXE: Record<string, string> = { sun: '☀️', moon: '🌙', cloud: '☁️', drop: '🌧️', bolt: '⛈️' };
+  const wi = w ? wx(w.now.code, w.now.isDay) : null;
+  const next = upcomingReminders()[0];
+  const nextTask = todayTasks().find((t) => !t.done_at);
+  const h = app.home;
+  const lines = (h?.brief?.text ?? '').split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 3);
+  const todayW = {
+    date: new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' }),
+    temp: w ? `${Math.round(w.now.temp)}°` : '', wx: wi ? `${WXE[wi.icon] ?? '🌤️'} ${wi.label}` : '',
+    hilo: w ? `H ${Math.round(w.today.max)}°  L ${Math.round(w.today.min)}°${w.aqi !== null ? `  ·  AQI ${w.aqi}` : ''}` : '',
+    lines: lines.length ? lines : ['Open Koro for your brief'],
+    next: next ? `${new Date(next.fire_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })} · ${next.title}` : nextTask ? `${nextTask.due_time ? nextTask.due_time + ' · ' : ''}${nextTask.title}` : '',
+  };
+  const water = { ml: waterToday(), goal: app.prefs.waterGoal, glass: app.prefs.waterGlass };
+  const m = h?.matches.live[0] ?? h?.matches.upcoming[0] ?? null;
+  const score = (x: Match) => x.innings.slice(-2).map((i) => `${i.team.split(' ').map((p) => p[0]).join('').slice(0, 4).toUpperCase()} ${i.runs}/${i.wkts} (${i.overs})`).join('  ·  ');
+  const match = m ? {
+    live: m.state === 'live', title: m.short?.join(' vs ') ?? m.teams.join(' vs '),
+    line: m.state === 'live' ? (score(m) || m.status) : m.startsAt ? new Date(m.startsAt).toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : m.status,
+    sub: m.state === 'live' ? m.status : (m.series ?? m.format ?? ''),
+  } : null;
+  const macDev = h?.devices.find((d) => d.kind === 'mac');
+  const mac = { online: !!(app.mac?.online ?? h?.mac?.online), battery: macDev?.battery_pct ?? null, name: macDev?.name ?? 'Mac' };
+  await native.widgetData({ tasks, habits: hs, grocery, today: todayW, water, match, mac });
 }
 /** Ticks made on widgets and "+1 glass" taps on notifications while the app was closed. */
 export async function applyOps() {
@@ -572,7 +598,7 @@ export async function loadHome(fresh = false) {
   if (!paired()) return;
   try {
     const r = await request<Home>(app.cfg.server, fresh ? '/v1/home?fresh=1' : '/v1/home', { token: app.cfg.token, etag: app.homeEtag });
-    if (r.data) { app.home = r.data; app.homeEtag = r.etag ?? ''; void kvSet('home', r.data); }
+    if (r.data) { app.home = r.data; app.homeEtag = r.etag ?? ''; void kvSet('home', r.data); scheduleWidgets(); }
     app.status.online = true;
   } catch (e) { handleError(e); }
 }

@@ -48,6 +48,22 @@
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/koro_widget_music" />
         </receiver>
+        <receiver android:name="com.koro.plugin.TodayWidget" android:exported="false" android:label="Koro · Today">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/koro_widget_today" />
+        </receiver>
+        <receiver android:name="com.koro.plugin.WaterWidget" android:exported="false" android:label="Koro · Water">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/koro_widget_water" />
+        </receiver>
+        <receiver android:name="com.koro.plugin.MacWidget" android:exported="false" android:label="Koro · Mac remote">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/koro_widget_mac" />
+        </receiver>
+        <receiver android:name="com.koro.plugin.CricketWidget" android:exported="false" android:label="Koro · Cricket">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/koro_widget_cricket" />
+        </receiver>
         <receiver android:name="com.koro.plugin.WidgetActionReceiver" android:exported="false" />
         <!-- "Koro" in the share sheet: send links/text to the Mac, read later, add as task -->
         <activity android:name="com.koro.plugin.ShareActivity" android:exported="true" android:label="Koro"

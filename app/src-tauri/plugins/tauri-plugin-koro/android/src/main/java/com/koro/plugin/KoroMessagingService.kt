@@ -33,6 +33,7 @@ class KoroMessagingService : FirebaseMessagingService() {
             Notifier.show(this, (tag ?: "brief").hashCode(), Notifier.CH_BRIEF, title, body)
         } else if (d["kind"] == "match" && tag != null) {
             Notifier.match(this, tag, title, body, buzz = d["buzz"] == "1", final = d["final"] == "1")
+            MoreWidgets.onMatchPush(this, title, body, final = d["final"] == "1")
         } else {
             Notifier.show(this, (tag ?: title).hashCode(), Notifier.CH_GENERAL, title, body)
         }

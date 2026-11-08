@@ -8,9 +8,13 @@
   let busy = $state(false);
   let startY = -1, startX = 0;
   let active = $state(false);
+  // the page scrolls inside <body> (overflow-x: hidden makes it the scroller), so window.scrollY alone is always 0
+  const scrollTop = () => Math.max(window.scrollY, document.documentElement.scrollTop, document.body.scrollTop);
 
   function start(e: TouchEvent) {
-    if (busy || app.desk || window.scrollY > 0 || !canPull(app.tab)) return;
+    if (busy || app.desk || scrollTop() > 0 || !canPull(app.tab)) return;
+    // only a pull that starts in the upper part of the screen (header area), never a normal scroll gesture
+    if (e.touches[0]!.clientY > window.innerHeight * 0.35) return;
     const t = e.target as HTMLElement | null;
     if (t?.closest('[role="dialog"], input, textarea, [data-nopull]')) return;
     startY = e.touches[0]!.clientY; startX = e.touches[0]!.clientX; active = false;
@@ -19,7 +23,7 @@
     if (startY < 0) return;
     const y = e.touches[0]!.clientY - startY, x = Math.abs(e.touches[0]!.clientX - startX);
     if (!active) {
-      if (y > 10 && y > x * 1.5 && window.scrollY <= 0) active = true;
+      if (y > 16 && y > x * 2 && scrollTop() <= 0) active = true;
       else if (y < 0 || x > 14) { startY = -1; return; }
       else return;
     }

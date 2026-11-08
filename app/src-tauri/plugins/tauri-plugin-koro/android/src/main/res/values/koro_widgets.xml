@@ -10,4 +10,8 @@
     <string name="koro_w_desc_habits">Koro habits: today\'s habits with streaks</string>
     <string name="koro_w_desc_grocery">Koro grocery list</string>
     <string name="koro_w_desc_music">Koro holo player: phone or Mac, with controls</string>
+    <string name="koro_w_desc_today">Koro today: weather, your AI brief and what\'s next</string>
+    <string name="koro_w_desc_water">Koro water: today\'s progress with a one-tap glass</string>
+    <string name="koro_w_desc_mac">Koro Mac remote: play, volume, lock, work mode</string>
+    <string name="koro_w_desc_cricket">Koro cricket: live India / MI score or the next match</string>
 </resources>

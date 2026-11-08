@@ -20,7 +20,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      DOMAIN: ${DOMAIN:?set DOMAIN, e.g. api.13-201-5-9.sslip.io}
+      DOMAIN: ${DOMAIN:?set DOMAIN, e.g. api.203-0-113-10.sslip.io}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

@@ -12,3 +12,6 @@ app/src-tauri/target/
 .env.*
 !.env.example
 __pycache__/
+.gradle/
+**/android/build/
+.claude/

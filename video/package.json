@@ -1,0 +1,23 @@
+{
+  "name": "koro-video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts KoroFilm out/koro-4k.mp4 --codec h264 --crf 16 --concurrency 4",
+    "still": "remotion still src/index.ts KoroFilm out/frame.png"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.541",
+    "@remotion/google-fonts": "^4.0.541",
+    "@remotion/media-utils": "^4.0.541",
+    "@remotion/transitions": "^4.0.541",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.541"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.31",
+    "typescript": "^5.9.3"
+  }
+}

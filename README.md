@@ -1,14 +1,31 @@
 # Koro
 
-A personal all-rounder for one Galaxy S25: cricket (India + MI), news, to-dos, groceries, habits, reminders, focus and sleep timers, battery levels for the phone and the Mac, and a desk clock.
+A personal all-rounder for one Galaxy S25 and one MacBook: an AI brief for the day, cricket (India + MI), news and YouTube digests, a holographic music player, a remote for the Mac, a shared clipboard, wellbeing limits, lists and home-screen widgets.
+
+▶ **Film:** a 4K walkthrough made with Remotion from real screen recordings lives in [`video/`](video/) (render it with `npm run render`).
 
 ```
 app/            Tauri 2 + Svelte 5 phone app (Kotlin plugin in app/src-tauri/plugins/tauri-plugin-koro)
 server/         Bun + Hono API · Postgres (Neon in prod, embedded PGlite locally) · cricket engine · AI · FCM
 shared/         quick-add parser used by both
-mac-companion/  koro-mac.sh: reports MacBook battery every 10 min
+mac-companion/  koro-agent.swift (menu-bar agent: remote, now playing, clipboard), koro-x.py (X / YouTube collector), koro-mac.sh (installer)
+video/          Remotion project for the 4K product film
 docs/           plan, UI/UX, architecture
 ```
+
+## What it does
+
+| Area | Features |
+|---|---|
+| **Today** | AI morning and night briefs from weather, calendar, tasks, cricket and news. Festival-aware: on Diwali or Holi the brief wishes you in its own words and mentions a real custom. Quick add by voice or text ("milk, eggs, call bank 10am"). |
+| **Now playing** | Holographic player for whatever is playing on the phone **or the Mac** (the Mac wins when both play). Synced lyrics, Up next, Like / Shuffle / Repeat, and Play: find any song and it starts in YouTube Music with a radio mix. |
+| **Mac remote** | Play/pause, volume and brightness sliders that stay in sync both ways (with an on-screen HUD on the Mac), Lock, **Sleep on/off** (display sleep, wakes it again), **Keep awake** (starts and ends an [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704) session, falls back to `caffeinate`), Deep sleep, Find Mac, Work mode and one-tap app launchers. |
+| **Clipboard** | Copy text or an **image** on the Mac and it's on the phone's clipboard. Share a photo or text to Koro on the phone and press ⌘V on the Mac. |
+| **Cricket** | Live India and MI scores, scorecards, results, the buzz from X, and pushes by over or session (see the alert rules below). |
+| **News & YouTube** | AI digests for World, India, AI & Tech and AI Startups; any YouTube video fully explained and saved as PDF or Markdown; read later offline. |
+| **Wellbeing** | Daily limits per app, screen time, water, focus and sleep timers, habits. |
+| **Widgets** | Holographic home-screen widgets: Today, Water (+1 glass), Mac remote, live Cricket, Now playing and the lists. |
+| **Everywhere** | Pull down from the top of any tab to fetch only what changed (ETags, 304s). Desk mode for a docked phone. |
 
 ## 1. Run the server on your Mac (LAN, for first use)
 
@@ -16,7 +33,7 @@ docs/           plan, UI/UX, architecture
 cd server
 bun install
 bun src/index.ts            # http://0.0.0.0:8787, pairing code is SETUP_CODE in server/.env
-bun test                    # 20 tests
+bun test                    # 38 tests
 ```
 
 The phone and the Mac must be on the same Wi-Fi. In the app's Settings, pair with `http://<mac-ip>:8787` and the code from `server/.env`.
@@ -49,12 +66,20 @@ The release APK is signed with the debug key unless you configure signing, which
 
 **After the first launch on the phone:** in Settings, allow notifications, exact alarms, Do Not Disturb access (for Focus), Usage access (for screen time) and "Unrestricted" battery. Each one has its own button.
 
-## 3. Mac battery
+## 3. Mac companion
 
 ```sh
 mac-companion/koro-mac.sh pair http://localhost:8787 <SETUP_CODE>
-mac-companion/koro-mac.sh install     # launchd, every 10 min
+mac-companion/koro-mac.sh install     # builds koro-agent with swiftc, installs the launchd jobs
 ```
+
+Re-run `install` after pulling changes to `koro-agent.swift`. The agent lives in the menu bar and:
+
+- reports battery, volume, brightness, display sleep and keep-awake state, and what's playing (Music, Spotify, Safari / Chrome tabs incl. YouTube Music);
+- runs commands from the phone: media keys, volume, brightness, lock, `sleeptoggle`, `awake`, `sleep`, find, work mode and app launchers;
+- syncs the clipboard (text and images, ≤ 2000 px) both ways.
+
+On first launch macOS asks for **Accessibility** (media keys) and **Automation** (Amphetamine, browsers, Music). For Keep awake, install Amphetamine from the App Store; without it Koro uses `caffeinate`.
 
 ## 4. Production: EC2 + Neon
 
@@ -69,6 +94,17 @@ mac-companion/koro-mac.sh install     # launchd, every 10 min
 3. On EC2, edit `~/koro/server/.env` and set `DATABASE_URL=<neon pooled url>`. The AI keys and `SETUP_CODE` came across with the file.
 4. Log out and back in, then from `~/koro` run `echo DOMAIN=<domain> > server/deploy/.env` once and `docker compose -f server/deploy/docker-compose.yml up -d --build`. Example domain: `DOMAIN=api.<elastic-ip-with-dashes>.sslip.io docker compose -f server/deploy/docker-compose.yml up -d --build`. You can use your own domain instead. Caddy gets HTTPS automatically.
 5. In the app, open Settings → Unpair, then pair again with `https://<domain>`.
+
+## 5. The film (Remotion)
+
+```sh
+cd video
+npm install
+npm run studio        # preview and tweak scenes (src/scenes.ts holds the script)
+npm run render        # → out/koro-4k.mp4, 3840×2160, 30 fps, H.264
+```
+
+Scenes play real screen recordings from `public/clips/` (captured with `adb shell screenrecord`) inside a 3D phone frame on a holographic background.
 
 ## Optional keys (`server/.env`)
 

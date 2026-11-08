@@ -11,7 +11,7 @@ import { getNews, type NewsCat } from '../services/news.ts';
 import { notify, pushEnabled } from '../services/push.ts';
 import { onXIngest } from '../services/xnotify.ts';
 import { CRICKET_HANDLES, getX, ingest } from '../services/x.ts';
-import { clipToPhone, cmdToPhone, currentSeq, MAC_CMDS, macMedia, macMediaNow, macOnline, nextEvents, phone, PHONE_CMDS, pushToMac, status as macStatus } from '../services/mac.ts';
+import { clipToPhone, cmdToPhone, currentSeq, MAC_CMDS, macMediaNow, macOnline, setMacMedia, nextEvents, phone, PHONE_CMDS, pushToMac, status as macStatus } from '../services/mac.ts';
 import { addSaved } from '../services/saved.ts';
 import { getWeather } from '../services/weather.ts';
 import { getLyrics } from '../services/lyrics.ts';
@@ -40,7 +40,7 @@ export function apiRoutes(db: Db) {
         digest: Object.fromEntries(Object.entries(news.digest ?? {}).map(([k, d]) => [k, d!.stories.slice(0, 3)])),
       },
       devices,
-      mac: { online: macOnline(), volume: macStatus.volume, muted: macStatus.muted },
+      mac: { online: macOnline(), volume: macStatus.volume, muted: macStatus.muted, media: macMediaNow() },
       inbox,
       x: (() => { const x = getX(); return { at: x.at, digest: x.digest, feed: x.feed.slice(0, 3), cricket: x.cricket.slice(0, 3) }; })(),
       features: { ai: aiEnabled(), push: pushEnabled(), cricketDetail: Boolean(env.CRICKETDATA_API_KEY), sportmonks: Boolean(env.SPORTMONKS_API_TOKEN) },
@@ -181,9 +181,9 @@ export function apiRoutes(db: Db) {
   r.post('/mac/media', async (c) => {
     if (!isMac(c)) return c.json({ error: 'Mac only' }, 403);
     const b = z.object({ title: z.string().max(300), artist: z.string().max(300).optional(), app: z.string().max(80).optional(),
-      url: z.string().max(500).optional(), playing: z.boolean().optional() }).passthrough().safeParse(await c.req.json().catch(() => null));
+      url: z.string().max(500).optional(), art: z.string().max(500).optional(), playing: z.boolean().optional() }).passthrough().safeParse(await c.req.json().catch(() => null));
     if (!b.success) return c.json({ error: 'bad media' }, 400);
-    Object.assign(macMedia, { title: b.data.title, artist: b.data.artist ?? '', app: b.data.app ?? '', url: b.data.url ?? '', playing: !!b.data.playing, at: Date.now() });
+    await setMacMedia(db, b.data);
     return c.json({ ok: true });
   });
 

@@ -62,7 +62,13 @@ object Widgets {
         val items = Prefs.widgetData(c).optJSONArray(kind) ?: JSONArray()
         val done = (0 until items.length()).count { items.optJSONObject(it)?.optBoolean("done") == true }
         rv.setTextViewText(R.id.w_title, when (kind) { TASKS -> "To-do"; HABITS -> "Habits"; else -> "Grocery" })
+        rv.setTextViewText(R.id.w_icon, when (kind) { TASKS -> "✅"; HABITS -> "🔥"; else -> "🛒" })
+        rv.setTextViewText(R.id.w_kicker, when (kind) { TASKS -> "KORO · TODAY"; HABITS -> "KORO · STREAKS"; else -> "KORO · SHOPPING" })
+        // each list gets its own holo glow: cyan to-do, violet habits, gold-green grocery
+        rv.setInt(R.id.w_glow, "setColorFilter", when (kind) { TASKS -> 0xFF4FB8FF.toInt(); HABITS -> 0xFFB06CFF.toInt(); else -> 0xFF9EDB6A.toInt() })
         rv.setTextViewText(R.id.w_count, if (kind == GROCERY) "${items.length()} to buy" else "$done / ${items.length()}")
+        if (kind == GROCERY || items.length() == 0) rv.setViewVisibility(R.id.w_progress, View.GONE)
+        else { rv.setViewVisibility(R.id.w_progress, View.VISIBLE); rv.setProgressBar(R.id.w_progress, 100, done * 100 / items.length(), false) }
         rv.setOnClickPendingIntent(R.id.w_header, openApp(c, kind.hashCode()))
         for (i in ROW.indices) {
             val it = items.optJSONObject(i)
@@ -110,7 +116,7 @@ object Widgets {
     }
 
     // ---------- music ----------
-    private fun rounded(src: Bitmap, size: Int, radius: Float): Bitmap {
+    fun rounded(src: Bitmap, size: Int, radius: Float): Bitmap {
         val scaled = Bitmap.createScaledBitmap(src, size, size, true)
         val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = BitmapShader(scaled, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP) }
@@ -126,6 +132,25 @@ object Widgets {
         val rv = RemoteViews(c.packageName, R.layout.koro_widget_music)
         rv.setOnClickPendingIntent(R.id.m_art, openApp(c, 9100))
         rv.setOnClickPendingIntent(R.id.m_info, openApp(c, 9101))
+        val mac = MacMedia.source(c) == "mac"
+        rv.setImageViewResource(R.id.m_src_icon, if (mac) R.drawable.koro_w_mac else R.drawable.koro_w_phone)
+        rv.setTextViewText(R.id.m_src_text, if (mac) "Mac" else "Phone")
+        rv.setOnClickPendingIntent(R.id.m_src, action(c, 9204, WidgetActionReceiver.SOURCE) { })
+        if (mac) {
+            val st = MacMedia.state(c)
+            rv.setTextViewText(R.id.m_app, if (st == null) "YOUR MAC" else "ON YOUR MAC" + if (st.app.isNotEmpty()) " · ${st.app.uppercase()}" else "")
+            rv.setTextViewText(R.id.m_title, st?.title ?: "Nothing playing on your Mac")
+            rv.setTextViewText(R.id.m_artist, st?.artist?.ifEmpty { null } ?: if (st == null) "Play music or a video on the Mac" else "")
+            val art = MacMedia.art(c)
+            if (art != null) { rv.setImageViewBitmap(R.id.m_art, rounded(art, 220, 26f)); rv.setImageViewBitmap(R.id.m_wash, wash(art)) }
+            else { rv.setImageViewResource(R.id.m_art, R.drawable.koro_w_art_mac); rv.setImageViewResource(R.id.m_wash, android.R.color.transparent) }
+            rv.setImageViewResource(R.id.m_play, if (st?.playing == true) R.drawable.koro_w_pause else R.drawable.koro_w_play)
+            rv.setOnClickPendingIntent(R.id.m_prev, MacMedia.action(c, 9211, "prev"))
+            rv.setOnClickPendingIntent(R.id.m_play, MacMedia.action(c, 9212, "toggle"))
+            rv.setOnClickPendingIntent(R.id.m_next, MacMedia.action(c, 9213, "next"))
+            AppWidgetManager.getInstance(c).updateAppWidget(ids, rv)
+            return
+        }
         val mc = if (Media.granted(c)) Media.current(c) else null
         if (!Media.granted(c)) {
             rv.setTextViewText(R.id.m_title, "See what's playing")
@@ -133,7 +158,7 @@ object Widgets {
             rv.setTextViewText(R.id.m_app, "KORO")
         } else if (mc?.metadata == null) {
             rv.setTextViewText(R.id.m_title, "Nothing playing")
-            rv.setTextViewText(R.id.m_artist, "Play something in Spotify or YouTube Music")
+            rv.setTextViewText(R.id.m_artist, MacMedia.state(c)?.let { "Your Mac is playing ${it.title} · tap Mac" } ?: "Play something in Spotify or YouTube Music")
             rv.setTextViewText(R.id.m_app, "KORO")
             rv.setImageViewResource(R.id.m_art, R.drawable.koro_w_art_empty)
             rv.setImageViewResource(R.id.m_wash, android.R.color.transparent)
@@ -176,6 +201,8 @@ class WidgetActionReceiver : BroadcastReceiver() {
         const val TOGGLE = "com.koro.widget.TOGGLE"
         const val MEDIA = "com.koro.widget.MEDIA"
         const val WATER = "com.koro.water.ADD"
+        const val MAC = "com.koro.widget.MAC"
+        const val SOURCE = "com.koro.widget.SOURCE"
     }
     override fun onReceive(c: Context, i: Intent) {
         when (i.action) {
@@ -184,6 +211,14 @@ class WidgetActionReceiver : BroadcastReceiver() {
                 Media.control(c, i.getStringExtra("cmd") ?: "toggle", 0)
                 val pending = goAsync()
                 Handler(Looper.getMainLooper()).postDelayed({ Widgets.updateMusic(c); pending.finish() }, 600)
+            }
+            MAC -> {
+                val pending = goAsync()
+                Thread { try { MacMedia.send(c, i.getStringExtra("cmd") ?: "toggle") } finally { pending.finish() } }.start()
+            }
+            SOURCE -> {
+                MacMedia.setSource(c, if (MacMedia.source(c) == "mac") "phone" else "mac")
+                Widgets.updateMusic(c)
             }
             WATER -> {
                 Prefs.addOp(c, JSONObject().put("kind", "water").put("ml", 250))

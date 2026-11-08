@@ -35,6 +35,7 @@ object Notifier {
             NotificationChannel(CH_CLIP, "Clipboard from Mac", NotificationManager.IMPORTANCE_LOW),
             NotificationChannel(CH_WATER, "Water reminders", NotificationManager.IMPORTANCE_DEFAULT),
             NotificationChannel(CH_BRIEF, "Morning & night brief", NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(MacMedia.CH_MAC, "Playing on your Mac", NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) },
         ))
     }
 

@@ -61,7 +61,7 @@
   ].sort((a, b) => a.at.localeCompare(b.at)).slice(0, 3));
   const live = $derived(app.home?.matches.live[0]);
   const w = $derived(app.weather);
-  const music = $derived(!!app.media?.active && !!app.media.title);
+  const music = $derived((!!app.media?.active && !!app.media.title) || !!app.mac?.media?.title);
 </script>
 
 <div class="desk" class:desk--dim={dim} style="--dx:{shift.x}px; --dy:{shift.y}px" onpointerdowncapture={wake} onclickcapture={(e) => { if (dim) e.stopPropagation(); }} role="presentation">

@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <color name="koro_w_surface">#EE0B1220</color>
-    <color name="koro_w_line">#26FFFFFF</color>
-    <color name="koro_w_text">#FFF1F5FB</color>
-    <color name="koro_w_dim">#99F1F5FB</color>
-    <color name="koro_w_accent">#FF6CC4FF</color>
-    <color name="koro_w_gold">#FFE8C46A</color>
-</resources>

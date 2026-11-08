@@ -23,7 +23,25 @@ const TTL = { clip: 10 * 60_000, link: 10 * 60_000, cmd: 60_000 };
 export const status = { lastPoll: 0, volume: null as number | null, muted: null as boolean | null, brightness: null as number | null, awake: false, at: 0 };
 
 /** What's playing on the Mac (the agent reports changes + a heartbeat every minute). */
-export const macMedia = { title: '', artist: '', app: '', url: '', playing: false, at: 0 };
+export const macMedia = { title: '', artist: '', app: '', url: '', art: '', playing: false, at: 0 };
+let lastPushed = '';
+
+/** Artwork for what the Mac plays: Spotify's cover, or the YouTube video thumbnail. */
+export function macArt(url: string, art?: string) {
+  if (art?.startsWith('https://')) return art;
+  const id = url.match(/[?&]v=([\w-]{11})/)?.[1];
+  return id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : '';
+}
+
+/** Store the Mac's track; when it changes, a silent data push updates the phone's widget + controls. */
+export async function setMacMedia(db: Db, m: { title: string; artist?: string; app?: string; url?: string; art?: string; playing?: boolean }) {
+  Object.assign(macMedia, { title: m.title, artist: m.artist ?? '', app: m.app ?? '', url: m.url ?? '', art: macArt(m.url ?? '', m.art), playing: !!m.playing, at: Date.now() });
+  const key = `${macMedia.title}|${macMedia.artist}|${macMedia.playing}`;
+  if (key === lastPushed) return;
+  lastPushed = key;
+  await notify(db, { kind: 'macmedia', title: macMedia.title, body: macMedia.artist, tag: 'macmedia',
+    data: { app: macMedia.app, art: macMedia.art, playing: macMedia.playing ? '1' : '0' } }, { inbox: false }).catch(() => {});
+}
 export function macMediaNow() {
   return macMedia.title && Date.now() - macMedia.at < 3 * 60_000 && macOnline() ? { ...macMedia } : null;
 }

@@ -1,13 +1,20 @@
 <script lang="ts">
   import { native } from '../lib/native.ts';
-  import { app, mediaControl } from '../lib/store.svelte.ts';
+  import { app, macSend, mediaControl } from '../lib/store.svelte.ts';
   import Icon from './Icon.svelte';
   import PlayerSheet from './PlayerSheet.svelte';
 
   /** Holo trading card for whatever is playing on the phone. `compact` = one-line version for desk mode. */
   let { compact = false }: { compact?: boolean } = $props();
 
-  const m = $derived(app.media);
+  const pm = $derived(app.media);
+  const phoneOn = $derived(!!pm?.active && !!pm.title);
+  // phone idle but the Mac is playing → the same holo card shows the Mac and its buttons control the Mac
+  const mm = $derived(app.mac?.media ?? app.home?.mac?.media ?? null);
+  const isMac = $derived(!phoneOn && !!mm?.title);
+  const m = $derived(isMac && mm ? { ...pm, access: true, active: true, title: mm.title, artist: mm.artist, app: `Mac · ${mm.app}`, art: mm.art || '', playing: mm.playing,
+    album: '', duration: 0, position: 0, at: Date.now(), canPrev: true, canNext: true } : pm);
+  const ctl = (c: 'prev' | 'toggle' | 'next') => (isMac ? void macSend({ type: 'cmd', cmd: c }) : mediaControl(c));
   let now = $state(Date.now());
   $effect(() => {
     if (!m?.playing) return;
@@ -62,14 +69,14 @@
   }
 </script>
 
-{#if m && m.access === false}
+{#if !isMac && m && m.access === false}
   {#if !compact}
     <button class="card ask" onclick={() => native.openSettings('media')}>
       <Icon name="music" />
       <span><b>Show what's playing</b><span class="muted">Allow Koro in Notification access to see Spotify, YT Music and more here.</span></span>
     </button>
   {/if}
-{:else if !compact && m?.access && !m.active}
+{:else if !isMac && !compact && m?.access && !m.active}
   <button class="card ask" onclick={() => (sheet = 'play')}>
     <Icon name="music" />
     <span><b>Play something</b><span class="muted">Pick a song, artist or mix in YT Music or YouTube.</span></span>
@@ -78,7 +85,7 @@
   {#if compact}
     <section role="group" aria-label="Now playing" class="holo holo--mini" class:is-active={active} bind:this={card} style:--tint={tint || 'var(--sky-500)'}
       onpointermove={move} onpointerleave={leave} onpointerup={leave} onpointercancel={leave}>
-      <button class="m-art" onclick={(e) => { e.stopPropagation(); sheet = 'lyrics'; }} aria-label="Open player">
+      <button class="m-art" onclick={(e) => { e.stopPropagation(); if (!isMac) sheet = 'lyrics'; }} aria-label="Open player">
         {#if m.art}<img src={m.art} alt="" />{:else}<div class="ph"><Icon name="music" /></div>{/if}
         {#if m.playing}<span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>{/if}
       </button>
@@ -89,9 +96,9 @@
         <i class="bar"><i style="transform: scaleX({pct})"></i></i>
       </div>
       <div class="m-ctl">
-        <button class="ctl ctl--sm" onclick={(e) => { e.stopPropagation(); mediaControl('prev'); }} aria-label="Previous"><Icon name="prev" size={18} /></button>
-        <button class="ctl ctl--main ctl--mid" onclick={(e) => { e.stopPropagation(); mediaControl('toggle'); }} aria-label={m.playing ? 'Pause' : 'Play'}><Icon name={m.playing ? 'pause' : 'play'} size={22} /></button>
-        <button class="ctl ctl--sm" onclick={(e) => { e.stopPropagation(); mediaControl('next'); }} aria-label="Next"><Icon name="next" size={18} /></button>
+        <button class="ctl ctl--sm" onclick={(e) => { e.stopPropagation(); ctl('prev'); }} aria-label="Previous"><Icon name="prev" size={18} /></button>
+        <button class="ctl ctl--main ctl--mid" onclick={(e) => { e.stopPropagation(); ctl('toggle'); }} aria-label={m.playing ? 'Pause' : 'Play'}><Icon name={m.playing ? 'pause' : 'play'} size={22} /></button>
+        <button class="ctl ctl--sm" onclick={(e) => { e.stopPropagation(); ctl('next'); }} aria-label="Next"><Icon name="next" size={18} /></button>
       </div>
     </section>
   {:else}
@@ -103,7 +110,7 @@
         {#if m.playing}<span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>{/if}
       </div>
       <div class="info">
-        <div class="label">Now playing</div>
+        <div class="label">{isMac ? 'Playing on your Mac' : 'Now playing'}</div>
         <h2 class="title">{m.title}</h2>
         <div class="artist">{m.artist}{m.album && m.album !== m.title ? ` · ${m.album}` : ''}</div>
         {#if m.duration}
@@ -114,17 +121,17 @@
           </div>
         {/if}
         <div class="controls">
-          <button class="ctl" disabled={m.canPrev === false} onclick={() => mediaControl('prev')} aria-label="Previous"><Icon name="prev" /></button>
-          <button class="ctl ctl--main" onclick={() => mediaControl('toggle')} aria-label={m.playing ? 'Pause' : 'Play'}>
+          <button class="ctl" disabled={m.canPrev === false} onclick={() => ctl('prev')} aria-label="Previous"><Icon name="prev" /></button>
+          <button class="ctl ctl--main" onclick={() => ctl('toggle')} aria-label={m.playing ? 'Pause' : 'Play'}>
             <Icon name={m.playing ? 'pause' : 'play'} size={28} />
           </button>
-          <button class="ctl" disabled={m.canNext === false} onclick={() => mediaControl('next')} aria-label="Next"><Icon name="next" /></button>
+          <button class="ctl" disabled={m.canNext === false} onclick={() => ctl('next')} aria-label="Next"><Icon name="next" /></button>
         </div>
-        <div class="more">
+        {#if !isMac}<div class="more">
           <button onclick={() => (sheet = 'lyrics')}><Icon name="lyrics" size={16} /> Lyrics</button>
           <button onclick={() => (sheet = 'queue')}><Icon name="queue" size={16} /> Up next</button>
           <button onclick={() => (sheet = 'play')}><Icon name="search" size={16} /> Play…</button>
-        </div>
+        </div>{/if}
       </div>
     </section>
   {/if}

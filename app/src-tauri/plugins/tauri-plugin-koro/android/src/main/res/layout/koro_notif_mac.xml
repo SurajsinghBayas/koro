@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content">
+    <ImageView android:layout_width="match_parent" android:layout_height="match_parent"
+        android:scaleType="fitXY" android:src="@drawable/koro_w_holo" android:contentDescription="@null" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical" android:padding="8dp">
+        <ImageView android:id="@+id/n_art" android:layout_width="52dp" android:layout_height="52dp"
+            android:src="@drawable/koro_w_art_mac" android:scaleType="centerCrop" android:contentDescription="Artwork" />
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:layout_marginStart="12dp" android:orientation="vertical">
+            <TextView android:id="@+id/n_app" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:maxLines="1" android:ellipsize="end" android:text="ON YOUR MAC" android:textSize="10sp" android:textStyle="bold" android:letterSpacing="0.1" android:textColor="#FFC99A2E" />
+            <TextView android:id="@+id/n_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:maxLines="1" android:ellipsize="end" android:textSize="14sp" android:textStyle="bold"
+                android:textAppearance="@android:style/TextAppearance.Material.Notification.Title" />
+            <TextView android:id="@+id/n_artist" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:maxLines="1" android:ellipsize="end" android:textSize="12sp"
+                android:textAppearance="@android:style/TextAppearance.Material.Notification" />
+        </LinearLayout>
+        <ImageView android:id="@+id/n_prev" android:layout_width="38dp" android:layout_height="38dp" android:padding="8dp"
+            android:src="@drawable/koro_n_prev" android:contentDescription="Previous" />
+        <ImageView android:id="@+id/n_play" android:layout_width="42dp" android:layout_height="42dp" android:padding="9dp"
+            android:background="@drawable/koro_n_play_bg" android:src="@drawable/koro_w_play" android:contentDescription="Play or pause" />
+        <ImageView android:id="@+id/n_next" android:layout_width="38dp" android:layout_height="38dp" android:padding="8dp"
+            android:src="@drawable/koro_n_next" android:contentDescription="Next" />
+    </LinearLayout>
+</FrameLayout>

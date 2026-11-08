@@ -58,7 +58,7 @@ export type YtVideo = { id: string; channelId: string; channel: string; title: s
 export type Explain = { status: 'ready' | 'pending' | 'failed' | 'missing'; md?: string; at?: string; from?: 'transcript' | 'description'; title?: string; channel?: string; waiting?: 'transcript' | 'writing'; error?: string };
 export type YtData = { channels: { id: string; title: string; handle?: string }[]; videos: YtVideo[]; at: string | null };
 export type MacState = { online: boolean; volume: number | null; muted: boolean | null; brightness?: number | null; awake?: boolean;
-  media?: { title: string; artist: string; app: string; url?: string; playing: boolean } | null };
+  media?: { title: string; artist: string; app: string; url?: string; art?: string; playing: boolean } | null };
 export type Tab = 'home' | 'matches' | 'news' | 'well' | 'lists' | 'settings';
 type Cfg = { server: string; token: string; deviceId: string; name: string };
 type Prefs = { theme: 'auto' | 'light' | 'dark'; xLimit: number; xPackage: string; focusMin: number; sleepMin: number;

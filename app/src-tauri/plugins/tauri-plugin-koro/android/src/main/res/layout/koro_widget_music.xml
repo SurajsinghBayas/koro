@@ -15,8 +15,18 @@
             android:src="@drawable/koro_w_art_empty" android:scaleType="centerCrop" android:contentDescription="Album art" />
         <LinearLayout android:id="@+id/m_info" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
             android:layout_marginStart="14dp" android:orientation="vertical">
-            <TextView android:id="@+id/m_app" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="KORO" android:textSize="10sp" android:textStyle="bold" android:letterSpacing="0.12" android:textColor="#FFE8C46A" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                <TextView android:id="@+id/m_app" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                    android:maxLines="1" android:ellipsize="end"
+                    android:text="KORO" android:textSize="10sp" android:textStyle="bold" android:letterSpacing="0.12" android:textColor="#FFE8C46A" />
+                <LinearLayout android:id="@+id/m_src" android:layout_width="wrap_content" android:layout_height="26dp"
+                    android:background="@drawable/koro_w_pill" android:orientation="horizontal" android:gravity="center_vertical"
+                    android:paddingStart="8dp" android:paddingEnd="10dp" android:contentDescription="Switch between phone and Mac">
+                    <ImageView android:id="@+id/m_src_icon" android:layout_width="14dp" android:layout_height="14dp" android:src="@drawable/koro_w_phone" android:contentDescription="@null" />
+                    <TextView android:id="@+id/m_src_text" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="5dp"
+                        android:text="Phone" android:textSize="11sp" android:textStyle="bold" android:textColor="#FFF1F5FB" />
+                </LinearLayout>
+            </LinearLayout>
             <TextView android:id="@+id/m_title" android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:layout_marginTop="2dp" android:maxLines="1" android:ellipsize="end" android:text="Nothing playing"
                 android:textSize="16sp" android:textStyle="bold" android:textColor="#FFFFFFFF" />

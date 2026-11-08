@@ -138,10 +138,11 @@ func nowPlayingMac() -> [String: Any]? {
     }
     // 2) Music / Spotify
     for (id, app) in [("com.spotify.client", "Spotify"), ("com.apple.Music", "Music")] where running(id) {
-        if let r = osa("tell application \"\(app)\" to if player state is not stopped then return (player state as string) & \"\t\" & name of current track & \"\t\" & artist of current track"),
+        let extra = app == "Spotify" ? " & \"\t\" & artwork url of current track" : ""
+        if let r = osa("tell application \"\(app)\" to if player state is not stopped then return (player state as string) & \"\t\" & name of current track & \"\t\" & artist of current track\(extra)"),
            !r.isEmpty {
             let f = r.components(separatedBy: "\t")
-            if f.count >= 3 { return ["title": f[1], "artist": f[2], "app": app, "playing": f[0] == "playing"] }
+            if f.count >= 3 { return ["title": f[1], "artist": f[2], "app": app, "playing": f[0] == "playing", "art": f.count > 3 ? f[3] : ""] }
         }
     }
     // 3) a YouTube / YouTube Music tab in a browser

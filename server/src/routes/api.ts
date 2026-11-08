@@ -4,7 +4,8 @@ import { parseQuick } from '../../../shared/quickadd.ts';
 import type { Device } from '../auth.ts';
 import type { Db } from '../db.ts';
 import { aiEnabled, env } from '../env.ts';
-import { aiParse, getBrief, maybeRefreshBrief } from '../services/ai.ts';
+import { aiParse, aiParseMulti, getBrief, maybeRefreshBrief } from '../services/ai.ts';
+import { morningBrief, nightBrief, rememberLocation } from '../services/briefs.ts';
 import { getMatches } from '../services/cricket/engine.ts';
 import { getNews, type NewsCat } from '../services/news.ts';
 import { notify, pushEnabled } from '../services/push.ts';
@@ -13,6 +14,7 @@ import { CRICKET_HANDLES, getX, ingest } from '../services/x.ts';
 import { clipToPhone, currentSeq, MAC_CMDS, macOnline, nextEvents, pushToMac, status as macStatus } from '../services/mac.ts';
 import { addSaved } from '../services/saved.ts';
 import { getWeather } from '../services/weather.ts';
+import { getLyrics } from '../services/lyrics.ts';
 import { addChannel, getYt, pendingTranscripts, putTranscript, refreshYt, removeChannel } from '../services/yt.ts';
 
 type Env = { Variables: { device: Device } };
@@ -130,12 +132,35 @@ export function apiRoutes(db: Db) {
     return c.json({ source: 'rules', kind: q.kind, title: q.title, at: null, repeat: q.repeat ?? null, items: q.items ?? [] });
   });
 
+  r.post('/ai/parse-multi', async (c) => {
+    const b = z.object({ text: z.string().min(1).max(600), now: z.string().min(10).max(40) }).safeParse(await c.req.json().catch(() => null));
+    if (!b.success) return c.json({ error: 'text and now required' }, 400);
+    if (!aiEnabled()) return c.json({ error: 'AI is off on the server' }, 503);
+    try { return c.json({ items: await aiParseMulti(b.data.text, b.data.now) }); }
+    catch (e) { return c.json({ error: `AI couldn't split that: ${(e as Error).message}` }, 502); }
+  });
+
+  /** Send the 8 AM / 10 PM brief now (to preview it). */
+  r.post('/briefs/:kind/test', async (c) => {
+    const k = c.req.param('kind');
+    if (k !== 'morning' && k !== 'night') return c.json({ error: 'morning or night' }, 400);
+    return c.json({ ok: true, body: await (k === 'morning' ? morningBrief(db) : nightBrief(db)) });
+  });
+
   r.post('/ai/brief/refresh', (c) => { maybeRefreshBrief(db, briefCtx, true); return c.json({ ok: true, queued: aiEnabled() }); });
+
+  // ---------- lyrics ----------
+  r.get('/lyrics', async (c) => {
+    const title = c.req.query('title') ?? '', artist = c.req.query('artist') ?? '';
+    if (!title) return c.json({ error: 'title required' }, 400);
+    return c.json({ lyrics: await getLyrics(title, artist, c.req.query('album') ?? '', Number(c.req.query('duration') ?? 0) || 0) });
+  });
 
   // ---------- weather ----------
   r.get('/weather', async (c) => {
     const lat = Number(c.req.query('lat')), lon = Number(c.req.query('lon'));
     if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return c.json({ error: 'lat and lon required' }, 400);
+    rememberLocation(lat, lon);
     try { return c.json(await getWeather(lat, lon, env.TZ)); }
     catch (e) { return c.json({ error: `Weather unavailable: ${(e as Error).message}` }, 502); }
   });

@@ -20,6 +20,7 @@ object Notifier {
     const val CH_X_DIGEST = "x_digest"     // quiet 3-hourly X summary
     const val CH_CLIP = "clipboard"        // quiet: "copied from your Mac"
     const val CH_WATER = "water"           // water reminders with a "+1 glass" button
+    const val CH_BRIEF = "brief"           // 8 AM / 10 PM brief
 
     fun channels(c: Context) {
         if (Build.VERSION.SDK_INT < 26) return
@@ -33,6 +34,7 @@ object Notifier {
             NotificationChannel(CH_X_DIGEST, "X: summaries", NotificationManager.IMPORTANCE_LOW),
             NotificationChannel(CH_CLIP, "Clipboard from Mac", NotificationManager.IMPORTANCE_LOW),
             NotificationChannel(CH_WATER, "Water reminders", NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(CH_BRIEF, "Morning & night brief", NotificationManager.IMPORTANCE_DEFAULT),
         ))
     }
 

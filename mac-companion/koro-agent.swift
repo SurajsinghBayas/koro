@@ -92,6 +92,21 @@ func volumeStatus() -> [String: Any] {
 }
 func reportStatus() { _ = request("POST", "/v1/mac/status", body: volumeStatus()) }
 
+/// Battery from `pmset -g batt` ("…\t87%; charging; …"). Desktops without a battery report nothing.
+func reportBattery() {
+    let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/pmset"); p.arguments = ["-g", "batt"]
+    let pipe = Pipe(); p.standardOutput = pipe
+    guard (try? p.run()) != nil else { return }
+    p.waitUntilExit()
+    let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    guard let r = out.range(of: #"(\d+)%;\s*([a-zA-Z ]+)"#, options: .regularExpression) else { return }
+    let parts = out[r].split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }
+    guard let pct = Int(parts[0].dropLast()) else { return }
+    let state = parts.count > 1 ? parts[1] : ""
+    let charging = state.hasPrefix("charging") || state.hasPrefix("charged") || out.contains("AC Power")
+    _ = request("POST", "/v1/devices/battery", body: ["pct": pct, "charging": charging])
+}
+
 // ---------- clipboard: Mac → phone ----------
 let pb = NSPasteboard.general
 var lastCount = pb.changeCount
@@ -137,6 +152,7 @@ func handle(_ e: [String: Any]) {
         case "volup": osa("set volume output volume ((output volume of (get volume settings)) + 10) without output muted")
         case "voldown": osa("set volume output volume ((output volume of (get volume settings)) - 10)")
         case "mute": osa("set volume output muted (not (output muted of (get volume settings)))")
+        case "battery": reportBattery(); reportStatus()
         default: break
         }
         if cmd.hasPrefix("vol") || cmd == "mute" { reportStatus() }
@@ -146,8 +162,8 @@ func handle(_ e: [String: Any]) {
 
 Thread.detachNewThread {
     var since = 0.0
-    reportStatus()
-    var lastStatus = Date()
+    reportStatus(); reportBattery()
+    var lastStatus = Date(), lastBattery = Date()
     while true {
         if let r = request("GET", "/v1/mac/events?since=\(Int(since))", timeout: 40) {
             for e in (r["events"] as? [[String: Any]]) ?? [] { handle(e) }
@@ -156,6 +172,7 @@ Thread.detachNewThread {
             Thread.sleep(forTimeInterval: 5) // offline / server restarting
         }
         if Date().timeIntervalSince(lastStatus) > 60 { reportStatus(); lastStatus = Date() }
+        if Date().timeIntervalSince(lastBattery) > 300 { reportBattery(); lastBattery = Date() }
     }
 }
 

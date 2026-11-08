@@ -33,7 +33,9 @@ import android.view.WindowManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
+import androidx.activity.result.ActivityResult
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
@@ -342,6 +344,39 @@ class KoroPlugin(private val activity: Activity) : Plugin(activity) {
     fun mediaControl(invoke: Invoke) {
         val a = invoke.getArgs()
         invoke.resolve(JSObject().put("ok", Media.control(ctx, a.optString("action"), a.optLong("pos"))))
+    }
+
+    @Command
+    fun mediaQueue(invoke: Invoke) { invoke.resolve(Media.queue(ctx)) }
+
+    @Command
+    fun mediaAction(invoke: Invoke) {
+        val a = invoke.getArgs()
+        val ok = when (a.optString("type")) {
+            "queue" -> Media.skipTo(ctx, a.optLong("id"))
+            "custom" -> Media.custom(ctx, a.optString("action"))
+            "search" -> Media.playSearch(ctx, a.optString("query"), a.optString("pkg", "com.google.android.apps.youtube.music"))
+            else -> false
+        }
+        invoke.resolve(JSObject().put("ok", ok))
+    }
+
+    /** Speech to text with the phone's recogniser (Google, en-IN). */
+    @Command
+    fun listen(invoke: Invoke) {
+        val i = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+            putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Say what to add")
+        }
+        try { startActivityForResult(invoke, i, "onSpeech") }
+        catch (_: Exception) { invoke.resolve(JSObject().put("text", "").put("error", "No speech recogniser on this phone")) }
+    }
+
+    @ActivityCallback
+    fun onSpeech(invoke: Invoke, result: ActivityResult) {
+        val text = result.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull() ?: ""
+        invoke.resolve(JSObject().put("text", text))
     }
 
     @Command

@@ -2,6 +2,7 @@
   import { native } from '../lib/native.ts';
   import { app, mediaControl } from '../lib/store.svelte.ts';
   import Icon from './Icon.svelte';
+  import PlayerSheet from './PlayerSheet.svelte';
 
   /** Holo trading card for whatever is playing on the phone. `compact` = one-line version for desk mode. */
   let { compact = false }: { compact?: boolean } = $props();
@@ -18,6 +19,7 @@
   const fmt = (ms: number) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 
   // Tint the card with the artwork's colour (16×16 average, saturated a little).
+  let sheet = $state<null | 'lyrics' | 'queue' | 'play'>(null);
   let tint = $state('');
   $effect(() => {
     const src = m?.art;
@@ -67,6 +69,11 @@
       <span><b>Show what's playing</b><span class="muted">Allow Koro in Notification access to see Spotify, YT Music and more here.</span></span>
     </button>
   {/if}
+{:else if !compact && m?.access && !m.active}
+  <button class="card ask" onclick={() => (sheet = 'play')}>
+    <Icon name="music" />
+    <span><b>Play something</b><span class="muted">Pick a song, artist or mix in YT Music or YouTube.</span></span>
+  </button>
 {:else if m?.active && m.title}
   {#if compact}
     <div class="mini" style:--tint={tint || 'var(--accent)'}>
@@ -108,13 +115,23 @@
           </button>
           <button class="ctl" disabled={m.canNext === false} onclick={() => mediaControl('next')} aria-label="Next"><Icon name="next" /></button>
         </div>
+        <div class="more">
+          <button onclick={() => (sheet = 'lyrics')}><Icon name="lyrics" size={16} /> Lyrics</button>
+          <button onclick={() => (sheet = 'queue')}><Icon name="queue" size={16} /> Up next</button>
+          <button onclick={() => (sheet = 'play')}><Icon name="search" size={16} /> Play…</button>
+        </div>
       </div>
     </section>
   {/if}
 {/if}
 
+{#if sheet}<PlayerSheet start={sheet} onClose={() => (sheet = null)} />{/if}
+
 <style>
   .ask { display: flex; gap: var(--s3); align-items: center; text-align: left; }
+  .more { display: flex; gap: 6px; margin-top: 10px; position: relative; z-index: 3; }
+  .more button { flex: 1; display: inline-flex; gap: 5px; justify-content: center; align-items: center; height: 34px; border-radius: 999px;
+                 font-size: var(--fs-xs); font-weight: 650; color: var(--text-2); background: color-mix(in oklab, var(--surface-2) 70%, transparent); }
   .ask > span { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); }
 
   /* ---- holo card ---- */

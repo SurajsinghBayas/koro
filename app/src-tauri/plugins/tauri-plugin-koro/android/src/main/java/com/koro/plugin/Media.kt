@@ -12,6 +12,8 @@ import android.util.Base64
 import androidx.core.app.NotificationManagerCompat
 import app.tauri.plugin.JSObject
 import java.io.ByteArrayOutputStream
+import org.json.JSONArray
+import org.json.JSONObject
 
 /** Now playing from any app, via MediaSessionManager (needs Notification access for KoroMediaListener). */
 object Media {
@@ -72,6 +74,43 @@ object Media {
             .put("key", key)
         if (key != artKey) art(md)?.let { o.put("art", it) }
         return o
+    }
+
+    /** Up-next queue + the app's own buttons (YT Music: like/dislike, shuffle, repeat…). */
+    fun queue(c: Context): JSObject {
+        val mc = current(c) ?: return JSObject().put("items", JSONArray()).put("customs", JSONArray())
+        val activeId = mc.playbackState?.activeQueueItemId ?: -1L
+        val items = JSONArray()
+        val q = mc.queue ?: emptyList()
+        val start = maxOf(0, q.indexOfFirst { it.queueId == activeId })
+        for (it in q.drop(start).take(40)) {
+            val d = it.description
+            items.put(JSONObject().put("id", it.queueId).put("title", d.title?.toString() ?: "").put("subtitle", d.subtitle?.toString() ?: "")
+                .put("active", it.queueId == activeId))
+        }
+        val customs = JSONArray()
+        for (a in mc.playbackState?.customActions ?: emptyList()) customs.put(JSONObject().put("action", a.action).put("name", a.name?.toString() ?: a.action))
+        return JSObject().put("items", items).put("customs", customs).put("package", mc.packageName)
+    }
+
+    fun skipTo(c: Context, id: Long): Boolean { (current(c) ?: return false).transportControls.skipToQueueItem(id); return true }
+
+    fun custom(c: Context, action: String): Boolean { (current(c) ?: return false).transportControls.sendCustomAction(action, null); return true }
+
+    /** Play a song/artist/playlist by name in YT Music (or another app). Falls back to opening its search. */
+    fun playSearch(c: Context, query: String, pkg: String): Boolean {
+        val mc = controllers(c).firstOrNull { it.packageName == pkg }
+        if (mc != null && (mc.playbackState?.actions ?: 0L) and PlaybackState.ACTION_PLAY_FROM_SEARCH != 0L) {
+            mc.transportControls.playFromSearch(query, android.os.Bundle()); return true
+        }
+        // Voice-search intent: YT Music / YouTube handle it and start playing the best match.
+        val i = android.content.Intent(android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).apply {
+            setPackage(pkg); putExtra(android.app.SearchManager.QUERY, query); addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return try { c.startActivity(i); true } catch (_: Exception) {
+            val web = if (pkg.contains("music")) "https://music.youtube.com/search?q=" else "https://www.youtube.com/results?search_query="
+            try { c.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(web + android.net.Uri.encode(query))).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)); true } catch (_: Exception) { false }
+        }
     }
 
     fun control(c: Context, action: String, pos: Long): Boolean {

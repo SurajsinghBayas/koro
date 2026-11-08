@@ -20,9 +20,13 @@ class AlarmReceiver : BroadcastReceiver() {
                 val id = i.getStringExtra("id") ?: return
                 val title = i.getStringExtra("title") ?: "Reminder"
                 val repeat = i.getStringExtra("repeat") ?: ""
-                if (id.startsWith("water:")) Notifier.water(c, title)
+                // "days:<mask>" = daily alarm that only notifies on chosen weekdays (bit 0 = Monday)
+                val mask = repeat.removePrefix("days:").toIntOrNull()?.takeIf { repeat.startsWith("days:") }
+                val dow = (java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7
+                if (mask != null && (mask shr dow) and 1 == 0) { /* not today */ }
+                else if (id.startsWith("water:")) Notifier.water(c, title)
                 else Notifier.show(c, id.hashCode(), Notifier.CH_REMINDERS, "⏰ $title", "Koro reminder")
-                if (repeat == "daily") Alarms.reminder(c, id, title, i.getLongExtra("at", System.currentTimeMillis()) + 86_400_000L, repeat)
+                if (repeat == "daily" || mask != null) Alarms.reminder(c, id, title, i.getLongExtra("at", System.currentTimeMillis()) + 86_400_000L, repeat)
                 else Prefs.dropReminder(c, id)
             }
             Alarms.FOCUS_END -> endFocus(c, notify = true)

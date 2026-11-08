@@ -56,6 +56,33 @@ export async function aiParse(text: string, now: string): Promise<AiParse> {
   return { kind: j.kind, title: String(j.title ?? text).slice(0, 200), at: j.at ?? null, repeat: j.repeat === 'daily' ? 'daily' : null, items: Array.isArray(j.items) ? j.items.map(String).slice(0, 30) : [] };
 }
 
+export type AiItem = AiParse & { days: number[] | null; time: string | null };
+/** Several things in one note ("milk eggs, call bank tomorrow 10am, gym every Mon Wed Fri 7am") → one entry each. */
+export async function aiParseMulti(text: string, now: string): Promise<AiItem[]> {
+  const out = await chat([
+    {
+      role: 'system',
+      content:
+        'Split a note into separate items for a personal organizer. Reply with JSON only: {"items":[{"kind":"task|reminder|grocery|habit","title":string,"at":"YYYY-MM-DDTHH:mm"|null,"repeat":"daily"|null,"items":[string],"days":[int]|null,"time":"HH:mm"|null}]}\n' +
+        'Rules: all shopping/grocery things go in ONE grocery entry with each product in items (title "Grocery"). A one-off thing with a day or time → reminder, "at" in local time (a day without a time → 09:00). ' +
+        'Recurring routines ("gym every Mon Wed Fri 7am", "read daily") → habit; days = weekdays 0=Mon … 6=Sun (null = every day), time = HH:mm or null. ' +
+        'A recurring thing that is clearly a reminder ("take pills every day at 9pm") → reminder with repeat "daily". Anything else → task. Titles short, no time words, keep the user\'s language. ' +
+        `Current local time: ${now}.`,
+    },
+    { role: 'user', content: text.slice(0, 600) },
+  ], 600, 20_000);
+  const j = firstJson(out);
+  const list: any[] = Array.isArray(j?.items) ? j.items : j?.kind ? [j] : [];
+  const items = list.filter((x) => x && ['task', 'reminder', 'grocery', 'habit'].includes(x.kind)).slice(0, 12).map((x): AiItem => ({
+    kind: x.kind, title: String(x.title ?? '').slice(0, 200), at: typeof x.at === 'string' ? x.at : null, repeat: x.repeat === 'daily' ? 'daily' : null,
+    items: Array.isArray(x.items) ? x.items.map(String).slice(0, 30) : [],
+    days: Array.isArray(x.days) ? x.days.map(Number).filter((d: number) => d >= 0 && d <= 6) : null,
+    time: typeof x.time === 'string' && /^\d{1,2}:\d{2}$/.test(x.time) ? x.time.padStart(5, '0') : null,
+  }));
+  if (!items.length) throw new Error('AI returned no usable JSON');
+  return items;
+}
+
 type Brief = { text: string; at: string; day: string };
 let brief: Brief | null = loadSnapshot<Brief | null>('brief', null);
 let generating: Promise<void> | null = null;

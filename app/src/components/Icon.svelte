@@ -35,6 +35,10 @@
     copy: 'M8 2h13v13h-4v-2h2V4h-9v2H8zM3 8h13v14H3zm2 2v10h9V10z',
     heart: 'M4 4h6v2h1v1h2V6h1V4h6v2h2v7h-2v2h-2v2h-2v2h-2v2h-2v-2H9v-2H7v-2H5v-2H3V6h1z',
     yt: 'M3 5h18v14H3zm7 4v6h2v-1h2v-1h1v-2h-1v-1h-2V9z',
+    mic: 'M10 2h4v2h1v8h-1v2h-4v-2H9V4h1zM6 10h2v2h1v2h6v-2h1v-2h2v3h-1v2h-2v1h-2v3h3v2H8v-2h3v-3H9v-1H7v-2H6z',
+    queue: 'M3 5h12v2H3zm0 4h12v2H3zm0 4h8v2H3zm13 0h2v5h-1v1h-3v-1h-1v-2h1v-1h2zm0-4h5v2h-5z',
+    lyrics: 'M4 4h16v12h-9v2H9v2H7v-4H4zm2 2v8h12V6zm2 2h8v2H8zm0 3h5v2H8z',
+    search: 'M9 3h5v2h2v2h1v5h-1v2h-2v1h2v2h2v2h2v2h-2v-2h-2v-2h-2v-2H9v-1H7v-2H6V7h1V5h2zm0 2v2H8v5h1v1h5v-1h1V7h-1V5z',
     sparkle: 'M11 2h2v5h2v2h5v2h-5v2h-2v5h-2v-5H9v-2H4V9h5V7h2z',
   };
   let { name, size = 20 }: { name: keyof typeof P | string; size?: number } = $props();

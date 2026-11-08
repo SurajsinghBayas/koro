@@ -109,7 +109,7 @@
   }
   .toast { position: fixed; left: 50%; bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 14px); transform: translateX(-50%);
            max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: 12px; z-index: 60;
-           background: var(--text); color: var(--bg); font-size: var(--fs-sm); font-weight: 600; box-shadow: 0 6px 24px var(--elev);
+           background: var(--text); color: var(--bg); font-size: var(--fs-sm); font-weight: 600; white-space: pre-line; box-shadow: 0 6px 24px var(--elev);
            animation: toast-in var(--t-med) var(--ease-out); }
   @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 10px); } }
 </style>

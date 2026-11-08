@@ -14,6 +14,7 @@ import { pushEnabled } from './services/push.ts';
 import { startXNotifier } from './services/xnotify.ts';
 import { processSaved } from './services/saved.ts';
 import { startYt } from './services/yt.ts';
+import { startBriefs } from './services/briefs.ts';
 
 const db = await openDb(env.DATABASE_URL);
 await migrate(db);
@@ -54,6 +55,7 @@ if (env.JOBS) {
   setInterval(history, 30 * 60_000);
   startXNotifier(db);
   startYt(db);
+  startBriefs(db);
   setTimeout(() => void processSaved(db), 15_000); // anything left pending by a restart
 }
 

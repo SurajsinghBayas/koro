@@ -50,7 +50,7 @@ object Alarms {
             val r = all.getJSONObject(id)
             var at = r.getLong("at")
             val repeat = r.optString("repeat")
-            if (repeat == "daily") while (at < now) at += 86_400_000L
+            if (repeat == "daily" || repeat.startsWith("days:")) while (at < now) at += 86_400_000L
             else if (at < now - 6 * 3_600_000L) { Prefs.dropReminder(c, id); continue }
             else if (at < now) at = now + 5_000L
             reminder(c, id, r.getString("title"), at, repeat)

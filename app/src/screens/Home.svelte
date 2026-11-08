@@ -9,8 +9,9 @@
   import MatchRow from '../components/MatchRow.svelte';
   import Odo from '../components/Odo.svelte';
   import { openUrl } from '../lib/open.ts';
+  import { native } from '../lib/native.ts';
   import {
-    addWater, app, doneReminder, groceryOpen, habits, quickAdd, refreshAll, saveForLater, waterToday,
+    addWater, app, doneReminder, refreshDevices, groceryOpen, habits, quickAdd, refreshAll, saveForLater, waterToday,
     streak, toast, todayTasks, toggleGrocery, toggleHabit, toggleTask, doneOn, upcomingReminders, paired,
   } from '../lib/store.svelte.ts';
   import { ago, dueInfo, fmtWhen, greeting } from '../lib/util.ts';
@@ -39,7 +40,7 @@
     const msg = await quickAdd(text, hint);
     busy = false;
     text = '';
-    if (msg) toast(msg);
+    if (msg) toast(msg, msg.includes('\n') ? 5000 : 2500);
   }
 
   const tasks = $derived(todayTasks());
@@ -48,6 +49,15 @@
   const matches = $derived(app.home?.matches);
   const matchList = $derived(matches ? [...matches.live, ...matches.upcoming.slice(0, 2), ...matches.recent.slice(0, 1)].slice(0, 4) : []);
   const water = $derived(waterToday());
+  let refreshing = $state(false);
+  async function refreshDev() { refreshing = true; await refreshDevices(); setTimeout(() => (refreshing = false), 2800); }
+  async function speak() {
+    const r = await native.listen();
+    if (r.error) return toast(r.error);
+    if (!r.text.trim()) return;
+    text = r.text;
+    await add();
+  }
   const date = $derived(new Date(now).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' }));
 </script>
 
@@ -80,7 +90,10 @@
   {/if}
 
   <form class="stack" style="gap:8px" onsubmit={(e) => { e.preventDefault(); add(); }}>
-    <input class="input" bind:value={text} placeholder="Add: milk · 6pm call mom · finish deck" enterkeyhint="done" disabled={busy} />
+    <div class="qa">
+      <input class="input" bind:value={text} placeholder={busy ? 'AI is sorting that out…' : 'milk eggs, call bank tomorrow 10am, gym Mon Wed Fri 7am'} enterkeyhint="done" disabled={busy} />
+      <button type="button" class="mic" onclick={speak} disabled={busy} aria-label="Say it"><Icon name="mic" size={20} /></button>
+    </div>
     <div class="chips">
       <button type="button" class="chip" onclick={() => add('task')}>Task</button>
       <button type="button" class="chip" onclick={() => add('reminder')}>Reminder</button>
@@ -161,7 +174,8 @@
 
   {#if app.home?.devices?.length || app.battery}
     <section class="card stack">
-      <div class="card__title" style="margin:0"><h3>Devices</h3></div>
+      <div class="card__title" style="margin:0"><h3>Devices</h3>
+        <button class="icon-btn sm" class:spin={refreshing} onclick={refreshDev} aria-label="Refresh battery"><Icon name="refresh" size={16} /></button></div>
       {#each app.home?.devices ?? [] as d (d.id)}
         {@const mine = d.id === app.cfg.deviceId}
         {@const pct = mine && app.battery ? app.battery.pct : d.battery_pct}
@@ -248,5 +262,12 @@
   .due.soon { color: var(--gold-text); } .due.overdue { color: var(--danger); }
   .small { font-size: var(--fs-xs); }
   .chips.wrap { flex-wrap: wrap; }
+  .qa { position: relative; }
+  .qa .input { padding-right: 52px; }
+  .mic { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; display: grid; place-items: center; color: var(--accent-text); border-radius: 999px; }
+  .mic:active { background: var(--surface-2); }
+  .icon-btn.sm { width: 36px; height: 36px; }
+  .spin :global(svg) { animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .sync-line { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-3); padding: var(--s2); }
 </style>

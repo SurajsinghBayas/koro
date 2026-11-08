@@ -53,3 +53,16 @@ describe('mac relay', () => {
     expect(await nextEvents(got[0]!.seq, 50)).toEqual([]);
   });
 });
+
+import { clean, parseLrc } from '../src/services/lyrics.ts';
+describe('lyrics', () => {
+  test('parses LRC with multiple stamps', () => {
+    const l = parseLrc('[ar:x]\n[00:12.50]Hello\n[00:05.00][01:00.00]Chorus\n');
+    expect(l.map((x) => x.t)).toEqual([5000, 12500, 60000]);
+    expect(l[1]!.x).toBe('Hello');
+  });
+  test('cleans YouTube noise', () => {
+    expect(clean('Kesariya (Official Video)')).toBe('Kesariya');
+    expect(clean('Arijit Singh - Topic')).toBe('Arijit Singh');
+  });
+});

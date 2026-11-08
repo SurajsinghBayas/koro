@@ -21,6 +21,7 @@ async function tryCall<T>(cmd: string, args: Record<string, unknown> = {}, fallb
 
 export type Perms = { notifications: boolean; exactAlarm: boolean; dnd: boolean; usage: boolean; batteryUnrestricted: boolean; media: boolean; calendar?: boolean; location?: boolean };
 export type PermKind = 'notifications' | 'exactAlarm' | 'dnd' | 'usage' | 'battery' | 'media';
+export type MediaQueue = { items: { id: number; title: string; subtitle: string; active: boolean }[]; customs: { action: string; name: string }[]; package?: string };
 export type CalEvent = { id: string; title: string; begin: number; end: number; allDay: boolean; location: string; color: string; calendar: string };
 export type AppUse = { pkg: string; label: string; min: number };
 export type Op = { kind: 'tasks' | 'habits' | 'grocery' | 'water'; id?: string; ml?: number; at: number };
@@ -89,6 +90,13 @@ export const native = {
 
   /** What any app is playing (Spotify, YT Music…). Album art only when `artKey` differs from the current track. */
   media: (artKey?: string) => (isNative ? tryCall<NowPlaying | null>('media', { artKey: artKey ?? '' }, null) : Promise.resolve(mockMedia(artKey))),
+  mediaQueue: (): Promise<MediaQueue> => (isNative ? tryCall<MediaQueue>('mediaQueue', {}, { items: [], customs: [] }) : Promise.resolve({
+    items: [{ id: 1, title: 'Kesariya', subtitle: 'Arijit Singh', active: true }, { id: 2, title: 'Apna Bana Le', subtitle: 'Arijit Singh', active: false }, { id: 3, title: 'Tum Hi Ho', subtitle: 'Arijit Singh', active: false }],
+    customs: [{ action: 'like', name: 'Like' }, { action: 'shuffle', name: 'Shuffle' }, { action: 'repeat', name: 'Repeat' }], package: 'com.google.android.apps.youtube.music' })),
+  mediaAction: (a: { type: 'queue'; id: number } | { type: 'custom'; action: string } | { type: 'search'; query: string; pkg?: string }) =>
+    tryCall<{ ok: boolean }>('mediaAction', a, { ok: false }),
+  /** Speech to text (Android recogniser). Browser preview: a prompt box. */
+  listen: async (): Promise<{ text: string; error?: string }> => (isNative ? tryCall('listen', {}, { text: '' }) : { text: prompt('Say it (browser preview):') ?? '' }),
   mediaControl: (action: 'toggle' | 'play' | 'pause' | 'next' | 'prev' | 'seek', pos = 0) => {
     if (!isNative) { if (action === 'toggle') __mockToggle(); else mockStart = Date.now(); return Promise.resolve(null); }
     return tryCall('mediaControl', { action, pos }, null);

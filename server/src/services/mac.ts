@@ -10,7 +10,7 @@ export type MacEvent =
   | { seq: number; at: number; type: 'clip'; text: string }
   | { seq: number; at: number; type: 'link'; url: string; title?: string }
   | { seq: number; at: number; type: 'cmd'; cmd: MacCmd; value?: number };
-export const MAC_CMDS = ['lock', 'sleep', 'toggle', 'next', 'prev', 'volume', 'volup', 'voldown', 'mute'] as const;
+export const MAC_CMDS = ['lock', 'sleep', 'toggle', 'next', 'prev', 'volume', 'volup', 'voldown', 'mute', 'battery'] as const;
 export type MacCmd = (typeof MAC_CMDS)[number];
 type NewEvent = { type: 'clip'; text: string } | { type: 'link'; url: string; title?: string } | { type: 'cmd'; cmd: MacCmd; value?: number };
 

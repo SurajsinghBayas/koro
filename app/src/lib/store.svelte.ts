@@ -201,7 +201,7 @@ export const grocerySuggestions = () => {
 
 // habits
 export const habits = () => live(app.habits).sort((a, b) => a.sort - b.sort);
-export function addHabit(name: string, remind_time: string | null = null) { write('habits', { id: uuid7(), name, days_mask: 127, remind_time, sort: Date.now() % 1e9, updated_at: '' } as Habit); }
+export function addHabit(name: string, remind_time: string | null = null, days_mask = 127) { write('habits', { id: uuid7(), name, days_mask, remind_time, sort: Date.now() % 1e9, updated_at: '' } as Habit); }
 export const doneOn = (h: Habit, day = dayKey()) => app.habit_logs.some((l) => l.habit_id === h.id && l.day === day && !l.deleted_at);
 export function toggleHabit(h: Habit) {
   const day = dayKey();
@@ -255,7 +255,8 @@ function scheduleAlarm(table: TableName, row: Base) {
     const [hh, mm] = h.remind_time.split(':').map(Number);
     const at = new Date(); at.setHours(hh ?? 9, mm ?? 0, 0, 0);
     if (at.getTime() <= Date.now()) at.setDate(at.getDate() + 1);
-    return void native.scheduleReminder({ id: `habit:${h.id}`, title: `Habit: ${h.name}`, at: at.getTime(), repeat: 'daily' });
+    const mask = h.days_mask ?? 127;
+    return void native.scheduleReminder({ id: `habit:${h.id}`, title: `Habit: ${h.name}`, at: at.getTime(), repeat: mask === 127 ? 'daily' : `days:${mask}` });
   }
 }
 function rollRepeatingReminders() {
@@ -404,7 +405,18 @@ export async function applyOps() {
 }
 
 // ---------- quick add ----------
+type AiItem = { kind: QuickResult['kind']; title: string; at: string | null; repeat: 'daily' | null; items: string[]; days: number[] | null; time: string | null };
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+/** Looks like several things at once: "milk eggs, call bank tomorrow 10am, gym every Mon Wed Fri 7am". */
+const looksMulti = (t: string) => /[,;\n]| and then | also /i.test(t) && t.trim().split(/\s+/).length >= 4;
+
 export async function quickAdd(text: string, hint?: QuickResult['kind']): Promise<string> {
+  if (!hint && looksMulti(text) && paired() && app.home?.features.ai) {
+    try {
+      const { data } = await request<{ items: AiItem[] }>(app.cfg.server, '/v1/ai/parse-multi', { token: app.cfg.token, body: { text, now: localNowLabel() }, timeoutMs: 20_000 });
+      if (data?.items?.length) return data.items.map(applyItem).join('\n');
+    } catch { /* offline or AI down: fall back to one item */ }
+  }
   let q = parseQuick(text, new Date(), hint);
   if (!q.title && !q.items?.length) return '';
   if (q.confidence < 0.75 && !hint && paired() && app.home?.features.ai) {
@@ -427,6 +439,30 @@ export async function quickAdd(text: string, hint?: QuickResult['kind']): Promis
     }
     default: addTask(q.title); return `Task added: ${q.title}`;
   }
+}
+
+function applyItem(it: AiItem): string {
+  switch (it.kind) {
+    case 'grocery': { const names = it.items.length ? it.items : [it.title]; addGrocery(names); return `🛒 ${names.join(', ')}`; }
+    case 'habit': {
+      const mask = it.days?.length ? it.days.reduce((m, d) => m | (1 << d), 0) : 127;
+      addHabit(it.title, it.time, mask);
+      return `🔁 ${it.title}${mask === 127 ? ' daily' : ` ${it.days!.map((d) => DAYS[d]).join(' ')}`}${it.time ? ` ${it.time}` : ''}`;
+    }
+    case 'reminder': {
+      const at = (it.at ? localWallClock(it.at) : undefined) ?? new Date(Date.now() + 3_600_000);
+      addReminder(it.title, at, it.repeat);
+      return `⏰ ${it.title} · ${at.toLocaleString('en-IN', { weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false })}`;
+    }
+    default: addTask(it.title); return `✅ ${it.title}`;
+  }
+}
+
+/** Ask the Mac for its battery now (the agent replies within a second or two), then refresh Home. */
+export async function refreshDevices() {
+  void reportBattery();
+  if (paired()) await macSend({ type: 'cmd', cmd: 'battery' }).catch(() => false);
+  setTimeout(() => void loadHome(), 2500);
 }
 
 // ---------- server ----------

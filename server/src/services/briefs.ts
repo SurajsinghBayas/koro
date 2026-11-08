@@ -1,3 +1,4 @@
+import { festivalFact } from './festivals.ts';
 import type { Db } from '../db.ts';
 import { aiEnabled, env } from '../env.ts';
 import { loadSnapshot, saveSnapshot } from '../lib/snapshot.ts';
@@ -57,8 +58,8 @@ async function compose(kind: 'morning' | 'night', facts: string[], fallback: str
   if (!aiEnabled()) return fallback;
   try {
     const sys = kind === 'morning'
-      ? 'Write a morning push notification body for one person in India. 4–5 short lines (under 70 chars each), plain text, no greeting, one emoji at the start of each line: weather (with what to carry), the first thing to do, cricket only if there is a match, one headline. Skip any topic whose facts are empty or none (never write lines like "no tasks"). Use ONLY the facts given.'
-      : 'Write a 10 PM wind-down push notification for one person. 3–5 short lines (under 70 chars each), plain text, one emoji per line, warm but not cheesy: what got done today, habit streaks (praise kept streaks, gently name a missed habit), what is first tomorrow. If nothing was done or tracked, keep it to 2 encouraging lines about tomorrow. Use ONLY the facts given.';
+      ? 'Write a morning push notification body for one person in India. 4–5 short lines (under 70 chars each), plain text, no greeting, one emoji at the start of each line. If a festival is TODAY, open with a warm wish for it (its own emoji). Then: weather (with what to carry), the first thing to do, cricket only if there is a match, one headline. Skip any topic whose facts are empty or none (never write lines like "no tasks"). Use ONLY the facts given.'
+      : 'Write a 10 PM wind-down push notification for one person. 3–5 short lines (under 70 chars each), plain text, one emoji per line, warm but not cheesy. If today was a festival, close the day with a short line about it; if one is tomorrow, mention it. Then: what got done today, habit streaks (praise kept streaks, gently name a missed habit), what is first tomorrow. If nothing was done or tracked, keep it to 2 encouraging lines about tomorrow. Use ONLY the facts given.';
     const out = await chat([{ role: 'system', content: sys }, { role: 'user', content: facts.join('\n') }], 260, 30_000);
     const text = out.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 5).join('\n');
     return text || fallback;
@@ -94,6 +95,8 @@ export async function morningBrief(db: Db) {
   const top = heads.length ? heads : [...n.items.india, ...n.items.world].map((x) => x.title);
   facts.push(`Top headlines: ${top.slice(0, 4).join(' | ')}`);
   if (top[0]) plain.push(`📰 ${top[0]}`);
+  const fest = await festivalFact(today);
+  if (fest) { facts.unshift(fest); const t = fest.match(/TODAY is ([^;(]+)/)?.[1]?.trim(); if (t) plain.unshift(`🎉 Happy ${t}!`); }
   const body = await compose('morning', all.length > 2 ? all : facts, plain.join('\n') || 'Have a good day.');
   await notify(db, { kind: 'brief', title: 'Good morning ☀️', body, tag: 'brief-morning' });
   return body;
@@ -116,6 +119,8 @@ export async function nightBrief(db: Db) {
     `Tomorrow reminders: ${rem.map((r) => `${fmtT(r.fire_at)} ${r.title}`).join('; ') || 'none'}`,
     `Cricket tomorrow: ${games.join('; ') || 'none'}`,
   ];
+  const fest = await festivalFact(today);
+  if (fest) facts.unshift(fest);
   const plain = [
     `✅ ${done.length} done today`,
     ...(hs.length ? [`🔥 ${hs.filter((h) => h.done).length}/${hs.length} habits · best streak ${Math.max(...hs.map((h) => h.streak))} days`] : []),
@@ -148,6 +153,8 @@ export async function gatherToday(db: Db) {
   const today = localDay();
   const out: string[] = [];
   out.push(`Now: ${new Date().toLocaleString('en-IN', { timeZone: env.TZ, weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit', hour12: true })}`);
+  const fest = await festivalFact(today);
+  if (fest) out.push(fest);
   if (sent.loc) {
     try {
       const w = await getWeather(sent.loc.lat, sent.loc.lon, env.TZ);
@@ -206,7 +213,7 @@ export function refreshTodayBrief(db: Db, force = false) {
     try {
       const facts = await gatherToday(db);
       const text = await chat([
-        { role: 'system', content: 'You write the "Today" card at the top of a personal app for one person in India. 4 short lines (max 85 characters each), plain text, each starting with one fitting emoji. Pick the most useful facts right now: what is next or overdue, weather worth acting on (rain, heat, AQI), cricket if there is any, then one interesting headline or video. Mention only things present in the facts; never say something is empty, missing or "no …". No greetings. Use ONLY the facts given.' },
+        { role: 'system', content: 'You write the "Today" card at the top of a personal app for one person in India. 4 short lines (max 85 characters each), plain text, each starting with one fitting emoji. If the facts say a festival is TODAY, the first line is a warm, specific wish for it with its own emoji (e.g. "🪔 Happy Diwali! Lakshmi Puja tonight, light up the diyas") and you may tie other lines to it (sweets on the grocery list, firecracker smoke and AQI, festive traffic). Then pick the most useful facts right now: what is next or overdue, weather worth acting on (rain, heat, AQI), cricket if there is any, a festival coming in the next days, one interesting headline or video. Mention only things present in the facts; never say something is empty, missing or "no …". No other greetings. Use ONLY the facts given.' },
         { role: 'user', content: facts.join('\n') },
       ], 300, 30_000);
       const lines = text.split('\n').map((l) => l.replace(/^[-•*\d.\s]+(?=\p{Extended_Pictographic})/u, '').trim()).filter(Boolean).slice(0, 4);

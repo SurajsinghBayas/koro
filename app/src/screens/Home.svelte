@@ -12,8 +12,7 @@
   import { native } from '../lib/native.ts';
   import {
     addWater, app, doneReminder, refreshDevices, groceryOpen, habits, quickAdd, refreshAll, saveForLater, waterToday,
-    streak, toast, todayTasks, toggleGrocery, toggleHabit, toggleTask, doneOn, upcomingReminders, paired,
-  } from '../lib/store.svelte.ts';
+    streak, toast, todayTasks, toggleGrocery, toggleHabit, toggleTask, doneOn, upcomingReminders, paired, onPull, loadHome, loadMac, loadWeather, sync, reportBattery } from '../lib/store.svelte.ts';
   import { ago, dueInfo, fmtWhen, greeting } from '../lib/util.ts';
 
   let sheet = $state<SheetItem | null>(null);
@@ -59,6 +58,12 @@
     await add();
   }
   const date = $derived(new Date(now).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' }));
+  // pull to refresh: everything on Home (+ a fresh Today brief, which the server writes in the background)
+  $effect(() => onPull('home', async () => {
+    await Promise.all([loadHome(true), sync(), loadMac(), loadWeather(), reportBattery()]);
+    setTimeout(() => void loadHome(), 15_000); // pick up the new brief
+    return 'Up to date';
+  }));
 </script>
 
 <main class="app stack page-enter">

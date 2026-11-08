@@ -374,6 +374,19 @@ export async function loadMac() {
   if (!paired()) return;
   try { const r = await request<MacState>(app.cfg.server, '/v1/mac/status', { token: app.cfg.token }); if (r.data) app.mac = r.data; } catch { /* offline */ }
 }
+/** Keeps the Mac's state live in the app (what it plays, volume, brightness): every 2.5 s while the app is open. */
+export function startMacLoop() {
+  let stop = false, t: ReturnType<typeof setTimeout>;
+  const tick = async () => {
+    if (stop) return;
+    if (!document.hidden && paired()) await loadMac();
+    if (!stop) t = setTimeout(tick, 2500);
+  };
+  const vis = () => { if (!document.hidden) { clearTimeout(t); void tick(); } };
+  document.addEventListener('visibilitychange', vis);
+  void tick();
+  return () => { stop = true; clearTimeout(t); document.removeEventListener('visibilitychange', vis); };
+}
 export async function macSend(body: { type: 'clip'; text: string } | { type: 'link'; url: string; title?: string } | { type: 'cmd'; cmd: string; value?: number; app?: string }) {
   native.vibrate(8);
   try {
@@ -546,10 +559,19 @@ function handleError(e: unknown) {
   if (err.status === 401) toast('This device was removed from the server. Pair again in Settings.');
 }
 
-export async function loadHome() {
+/** Last ETag per endpoint: an unchanged reply is a tiny 304 and the data on screen stays as it is. */
+const etags: Record<string, string> = {};
+async function getFresh<T>(path: string): Promise<T | null> {
+  const r = await request<T>(app.cfg.server, path, { token: app.cfg.token, etag: etags[path] });
+  if (r.etag) etags[path] = r.etag;
+  return r.data;
+}
+
+/** `fresh` (pull-to-refresh) also asks the server for a new Today brief. */
+export async function loadHome(fresh = false) {
   if (!paired()) return;
   try {
-    const r = await request<Home>(app.cfg.server, '/v1/home', { token: app.cfg.token, etag: app.homeEtag });
+    const r = await request<Home>(app.cfg.server, fresh ? '/v1/home?fresh=1' : '/v1/home', { token: app.cfg.token, etag: app.homeEtag });
     if (r.data) { app.home = r.data; app.homeEtag = r.etag ?? ''; void kvSet('home', r.data); }
     app.status.online = true;
   } catch (e) { handleError(e); }
@@ -558,25 +580,48 @@ export async function loadHome() {
 export async function loadMatches() {
   if (!paired()) return;
   try {
-    const r = await request<MatchesFull>(app.cfg.server, '/v1/matches', { token: app.cfg.token });
-    if (r.data) app.matchesFull = r.data;
+    const d = await getFresh<MatchesFull>('/v1/matches');
+    if (d) app.matchesFull = d;
   } catch (e) { handleError(e); }
 }
 
-export async function loadNews(cat: string) {
-  if (!paired()) return;
+/** Replaces the list with the latest; returns how many stories are new since what was on screen. */
+export async function loadNews(cat: string, fresh = false): Promise<number> {
+  if (!paired()) return 0;
   try {
-    const r = await request<{ items: NewsItem[]; digest: { at: string; stories: Story[] } | null }>(app.cfg.server, `/v1/news?cat=${cat}`, { token: app.cfg.token });
-    if (r.data) { app.news[cat] = r.data.items; app.digest[cat] = r.data.digest; }
-  } catch (e) { handleError(e); }
+    // ETag key without ?fresh so a pull and a normal load share it
+    const r = await request<{ items: NewsItem[]; digest: { at: string; stories: Story[] } | null }>(app.cfg.server,
+      `/v1/news?cat=${cat}${fresh ? '&fresh=1' : ''}`, { token: app.cfg.token, etag: etags['news:' + cat] });
+    if (r.etag) etags['news:' + cat] = r.etag;
+    if (!r.data) return 0;
+    const before = new Set((app.news[cat] ?? []).map((i) => i.id));
+    const added = before.size ? r.data.items.filter((i) => !before.has(i.id)).length : 0;
+    app.news[cat] = r.data.items; app.digest[cat] = r.data.digest;
+    return added;
+  } catch (e) { handleError(e); return 0; }
 }
 
 export async function loadX() {
   if (!paired()) return;
   try {
-    const r = await request<XData>(app.cfg.server, '/v1/x', { token: app.cfg.token });
-    if (r.data) app.x = r.data;
+    const d = await getFresh<XData>('/v1/x');
+    if (d) app.x = d;
   } catch (e) { handleError(e); }
+}
+
+// ---------- pull to refresh ----------
+/** Each screen registers what a pull does; it may return a short message for a toast. */
+const pullHandlers: Partial<Record<Tab, () => Promise<string | void>>> = {};
+export function onPull(tab: Tab, fn: () => Promise<string | void>) {
+  pullHandlers[tab] = fn;
+  return () => { if (pullHandlers[tab] === fn) delete pullHandlers[tab]; };
+}
+export const canPull = (tab: Tab) => !!pullHandlers[tab];
+export async function runPull(tab: Tab) {
+  const fn = pullHandlers[tab];
+  if (!fn) return;
+  native.vibrate(10);
+  try { const msg = await fn(); if (msg) toast(msg); } catch { toast('Could not refresh'); }
 }
 
 export async function reportBattery() {
@@ -680,7 +725,7 @@ export async function stopSleep() {
 }
 
 // ---------- now playing ----------
-/** Polls the phone's media session while something needs it: every 2 s when playing, 8 s when paused/idle. */
+/** Polls the phone's media session while the app is open: every 2 s when playing, 3 s when paused/idle. */
 export function startMediaLoop() {
   let stop = false, t: ReturnType<typeof setTimeout>;
   const tick = async () => {
@@ -691,7 +736,7 @@ export function startMediaLoop() {
       if (m) app.media = { ...m, art: m.art ?? (m.key && m.key === prev?.key ? prev?.art : undefined), at: Date.now() };
       else app.media = null;
     }
-    if (!stop) t = setTimeout(tick, app.media?.playing ? 2000 : 8000);
+    if (!stop) t = setTimeout(tick, app.media?.playing ? 2000 : 3000);
   };
   void tick();
   return () => { stop = true; clearTimeout(t); };

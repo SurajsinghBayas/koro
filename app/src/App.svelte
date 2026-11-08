@@ -2,7 +2,7 @@
   import { untrack } from 'svelte';
   import Icon from './components/Icon.svelte';
   import { native } from './lib/native.ts';
-  import { app, init, loadHome, refreshAll, rescheduleAll, startMediaLoop, sync, type Tab } from './lib/store.svelte.ts';
+  import { app, init, loadHome, refreshAll, rescheduleAll, startMacLoop, startMediaLoop, sync, type Tab } from './lib/store.svelte.ts';
   import { dissolve } from './lib/util.ts';
   import Desk from './screens/Desk.svelte';
   import Home from './screens/Home.svelte';
@@ -11,6 +11,7 @@
   import News from './screens/News.svelte';
   import Settings from './screens/Settings.svelte';
   import Wellbeing from './screens/Wellbeing.svelte';
+  import PullRefresh from './components/PullRefresh.svelte';
 
   void init().then(rescheduleAll);
 
@@ -32,7 +33,9 @@
   // Now playing: polled only while Home or desk mode is on screen
   $effect(() => {
     if (!app.ready || !(app.tab === 'home' || app.desk)) return;
-    return untrack(startMediaLoop); // the loop reads app.media; don't let that re-trigger this effect
+    const stopMac = untrack(startMacLoop);
+    const stopMedia = untrack(startMediaLoop); // the loops read app state; don't let that re-trigger this effect
+    return () => { stopMac(); stopMedia(); };
   });
 
   // Battery saver hint → disable animations
@@ -94,6 +97,7 @@
   </nav>
 {/if}
 
+<PullRefresh />
 {#if app.toast}<div class="toast" role="status">{app.toast}</div>{/if}
 
 <style>

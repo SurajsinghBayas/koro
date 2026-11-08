@@ -66,3 +66,9 @@ describe('lyrics', () => {
     expect(clean('Arijit Singh - Topic')).toBe('Arijit Singh');
   });
 });
+
+import { parseIcs } from '../src/services/festivals.ts';
+test('festival calendar parses and de-duplicates', () => {
+  const ics = 'BEGIN:VEVENT\r\nDTSTART;VALUE=DATE:20261108\r\nSUMMARY:Diwali/Deepavali\r\nDESCRIPTION:Public holiday\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART;VALUE=DATE:20261108\r\nSUMMARY:Diwali/Deepavali\r\nDESCRIPTION:Public holiday\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART;VALUE=DATE:20261111\r\nSUMMARY:Bhai Duj\r\nDESCRIPTION:Observance\r\nEND:VEVENT';
+  expect(parseIcs(ics)).toEqual([{ day: '2026-11-08', name: 'Diwali/Deepavali', holiday: true }, { day: '2026-11-11', name: 'Bhai Duj', holiday: false }]);
+});

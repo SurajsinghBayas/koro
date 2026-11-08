@@ -297,9 +297,10 @@ final class HUD {
         bars.frame = NSRect(x: 60, y: 16, width: 222, height: 10)
         [icon, label, bars].forEach { fx.addSubview($0) }
     }
-    /// value 0…1; kind "volume" | "brightness" | "muted"
-    func show(_ kind: String, _ value: Double) {
-        DispatchQueue.main.async { [self] in
+    /// value 0…1; kind "volume" | "brightness" | "muted". Safe from any thread (AppKit windows are main-thread only).
+    static func show(_ kind: String, _ value: Double) { DispatchQueue.main.async { shared.display(kind, value) } }
+    private func display(_ kind: String, _ value: Double) {
+        do {
             let sym = kind == "brightness" ? "sun.max.fill" : kind == "muted" || value <= 0 ? "speaker.slash.fill" : value < 0.34 ? "speaker.wave.1.fill" : value < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
             icon.image = NSImage(systemSymbolName: sym, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 22, weight: .medium))
             label.stringValue = kind == "brightness" ? "Display brightness · from phone" : "Volume · from phone"
@@ -322,7 +323,18 @@ func volumeStatus() -> [String: Any] {
     let m = osa("output muted of (get volume settings)") == "true"
     return ["volume": v >= 0 ? v : NSNull(), "muted": m, "brightness": brightness() ?? NSNull(), "awake": caffeinate != nil]
 }
-func reportStatus() { _ = request("POST", "/v1/mac/status", body: volumeStatus()) }
+var lastReported = ""
+func reportStatus() {
+    let st = volumeStatus()
+    lastReported = "\(st["volume"] ?? "")|\(st["muted"] ?? "")|\(st["brightness"] ?? "")|\(st["awake"] ?? "")"
+    _ = request("POST", "/v1/mac/status", body: st)
+}
+/// Volume / brightness changed on the Mac itself (keys, Control Centre) → tell the phone within ~1.5 s.
+func watchLevels() {
+    let st = volumeStatus()
+    let key = "\(st["volume"] ?? "")|\(st["muted"] ?? "")|\(st["brightness"] ?? "")|\(st["awake"] ?? "")"
+    if key != lastReported { lastReported = key; _ = request("POST", "/v1/mac/status", body: st) }
+}
 
 /// Battery from `pmset -g batt` ("…\t87%; charging; …"). Desktops without a battery report nothing.
 func reportBattery() {
@@ -400,10 +412,10 @@ func handle(_ e: [String: Any]) {
         }
         if cmd.hasPrefix("vol") || cmd == "mute" {
             let st = volumeStatus()
-            HUD.shared.show((st["muted"] as? Bool) == true ? "muted" : "volume", Double((st["volume"] as? Int) ?? 0) / 100)
+            HUD.show((st["muted"] as? Bool) == true ? "muted" : "volume", Double((st["volume"] as? Int) ?? 0) / 100)
             _ = request("POST", "/v1/mac/status", body: st)
         } else if cmd.hasPrefix("bright") {
-            HUD.shared.show("brightness", Double(brightness() ?? 0) / 100)
+            HUD.show("brightness", Double(brightness() ?? 0) / 100)
             reportStatus()
         } else if cmd == "awake" { reportStatus() }
     default: break
@@ -517,4 +529,7 @@ log("Koro agent running → \(server)  clipboard sync: \(clipSyncOn() ? "on" : "
 Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { _ in checkClipboard() }
 let mediaQueue = DispatchQueue(label: "koro.media")
 Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { _ in mediaQueue.async { watchMacMedia() } }
+let levelQueue = DispatchQueue(label: "koro.levels")
+Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in levelQueue.async { watchLevels() } }
+_ = HUD.shared // build the on-screen bars window now, on the main thread
 nsapp.run()

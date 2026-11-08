@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { type Context, Hono } from 'hono';
 import { z } from 'zod';
 import { parseQuick } from '../../../shared/quickadd.ts';
 import type { Device } from '../auth.ts';
@@ -7,7 +7,7 @@ import { aiEnabled, env } from '../env.ts';
 import { aiParse, aiParseMulti } from '../services/ai.ts';
 import { getTodayBrief, morningBrief, nightBrief, refreshTodayBrief, rememberLocation } from '../services/briefs.ts';
 import { getMatches } from '../services/cricket/engine.ts';
-import { getNews, type NewsCat } from '../services/news.ts';
+import { freshenNews, getNews, type NewsCat } from '../services/news.ts';
 import { notify, pushEnabled } from '../services/push.ts';
 import { onXIngest } from '../services/xnotify.ts';
 import { CRICKET_HANDLES, getX, ingest } from '../services/x.ts';
@@ -24,12 +24,24 @@ export function apiRoutes(db: Db) {
   const r = new Hono<Env>();
 
   /** Everything the Home screen needs in one small response. */
+  /** JSON with a weak ETag: an unchanged payload costs a 304 instead of the whole body (pull-to-refresh, polling). */
+  const etagged = (c: Context, body: unknown) => {
+    const etag = `W/"${Bun.hash(JSON.stringify(body)).toString(36)}"`;
+    if (c.req.header('if-none-match') === etag) return c.body(null, 304);
+    c.header('etag', etag);
+    return c.json(body);
+  };
+  let lastForcedBrief = 0;
+
   r.get('/home', async (c) => {
     const news = getNews();
     const matches = getMatches();
     const devices = await db.query('select id, name, kind, battery_pct, charging, battery_at, last_seen from devices order by kind, name');
     const inbox = await db.query('select id, kind, title, body, data, created_at from inbox order by id desc limit 15');
-    refreshTodayBrief(db);
+    // pull-to-refresh asks for a fresh brief (at most every 10 min); otherwise the 90-min rule applies
+    const fresh = c.req.query('fresh') === '1' && Date.now() - lastForcedBrief > 10 * 60_000;
+    if (fresh) lastForcedBrief = Date.now();
+    refreshTodayBrief(db, fresh);
     const body = {
       now: new Date().toISOString(),
       me: c.get('device'),
@@ -53,10 +65,10 @@ export function apiRoutes(db: Db) {
     return c.json(body);
   });
 
-  r.get('/matches', (c) => c.json(getMatches()));
+  r.get('/matches', (c) => etagged(c, getMatches()));
 
   // ---- X (collected on the Mac by Agent-Reach, see mac-companion/koro-x.py) ----
-  r.get('/x', (c) => { const x = getX(); return c.json({ at: x.at, digest: x.digest, feed: x.feed.slice(0, 40), cricket: x.cricket.slice(0, 50) }); });
+  r.get('/x', (c) => { const x = getX(); return etagged(c, { at: x.at, digest: x.digest, feed: x.feed.slice(0, 40), cricket: x.cricket.slice(0, 50) }); });
   r.get('/x/config', (c) => c.json({ cricket: CRICKET_HANDLES, feedTop: 25, feedScan: 120, cricketPerHandle: 15 }));
   r.post('/x/ingest', async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -68,10 +80,11 @@ export function apiRoutes(db: Db) {
     return c.json({ ok: true, ...res });
   });
 
-  r.get('/news', (c) => {
+  r.get('/news', async (c) => {
     const cat = (c.req.query('cat') ?? 'world') as NewsCat;
+    if (c.req.query('fresh') === '1') await freshenNews();
     const n = getNews();
-    return c.json({ cat, items: n.items[cat] ?? [], digest: n.digest?.[cat] ?? null, updatedAt: n.updatedAt });
+    return etagged(c, { cat, items: n.items[cat] ?? [], digest: n.digest?.[cat] ?? null, updatedAt: n.updatedAt });
   });
 
   r.post('/devices/battery', async (c) => {

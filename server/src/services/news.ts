@@ -97,6 +97,14 @@ state.digest = Object.fromEntries(Object.entries(state.digest ?? {}).filter(([k]
 
 export const getNews = () => state;
 
+let refreshing: Promise<void> | null = null;
+/** Pull-to-refresh: re-fetch the feeds if our copy is older than 3 min (shared with any refresh already running). */
+export async function freshenNews(maxWaitMs = 12_000) {
+  if (state.updatedAt && Date.now() - Date.parse(state.updatedAt) < 3 * 60_000) return;
+  refreshing ??= refreshNews().then(() => {}, () => {}).finally(() => { refreshing = null; });
+  await Promise.race([refreshing, new Promise((r) => setTimeout(r, maxWaitMs))]);
+}
+
 export async function refreshNews() {
   const next = empty();
   const results = await Promise.allSettled(

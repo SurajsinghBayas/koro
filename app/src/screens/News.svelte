@@ -4,7 +4,7 @@
   import XPostView from '../components/XPost.svelte';
   import SavedList from '../components/SavedList.svelte';
   import YouTube from '../components/YouTube.svelte';
-  import { app, loadNews, loadX, saveForLater, savedList, type Story } from '../lib/store.svelte.ts';
+  import { app, loadNews, loadX, loadYt, onPull, saveForLater, savedList, sync, type Story } from '../lib/store.svelte.ts';
   import { ago } from '../lib/util.ts';
 
   const CATS = ['world', 'india', 'ai', 'startups', 'feed', 'yt', 'saved'] as const;
@@ -23,6 +23,18 @@
   const latest = $derived(items.filter((n) => !covered.has(n.url)));
   const hide = (e: Event) => ((e.currentTarget as HTMLElement).style.display = 'none');
   const srcLine = (s: Story) => `${s.sources[0]?.source ?? ''}${s.sources.length > 1 ? ` +${s.sources.length - 1}` : ''}`;
+  // pull to refresh: the open tab only; news is re-fetched from the sources and new stories replace the old list
+  $effect(() => {
+    const c = cat;
+    return onPull('news', async () => {
+      if (c === 'feed') { await loadX(); return 'Feed updated'; }
+      if (c === 'yt') { await loadYt(); return 'Videos updated'; }
+      if (c === 'saved') { await sync(); return 'Read later synced'; }
+      const n = await loadNews(c, true);
+      window.scrollTo({ top: 0 });
+      return n ? `${n} new ${n === 1 ? 'story' : 'stories'}` : 'You\'re up to date';
+    });
+  });
 </script>
 
 <main class="app stack page-enter">

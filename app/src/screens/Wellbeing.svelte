@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from '../components/Icon.svelte';
   import { native } from '../lib/native.ts';
-  import { addWater, app, focusToday, loadApps, savePrefs, scheduleWater, setAppLimit, toast, undoWater, waterToday, waterWeek } from '../lib/store.svelte.ts';
+  import { addWater, app, focusToday, loadApps, onPull, refreshScreenTime, savePrefs, scheduleWater, setAppLimit, toast, undoWater, waterToday, waterWeek } from '../lib/store.svelte.ts';
 
   $effect(() => { void loadApps(); });
 
@@ -26,6 +26,7 @@
     await scheduleWater();
     toast(app.prefs.waterRemind ? `Water reminders every ${app.prefs.waterEvery}h, ${app.prefs.waterStart}–${app.prefs.waterEnd}` : 'Water reminders off');
   }
+  $effect(() => onPull('well', async () => { await Promise.all([loadApps(), refreshScreenTime()]); return 'Screen time updated'; }));
 </script>
 
 <main class="app stack page-enter">

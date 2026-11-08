@@ -1,22 +1,21 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
-  import { app, loadMac, macSend, sendClipboardToMac } from '../lib/store.svelte.ts';
+  import { app, macSend, sendClipboardToMac } from '../lib/store.svelte.ts';
 
   /** Remote for the paired Mac (via the Koro agent). `compact` = desk mode row. */
   let { compact = false }: { compact?: boolean } = $props();
   const mac = $derived(app.mac ?? app.home?.mac ?? null);
-  $effect(() => {
-    void loadMac();
-    const t = setInterval(() => { if (document.visibilityState === 'visible') void loadMac(); }, 5000); // keeps "Playing on Mac" live
-    return () => clearInterval(t);
-  });
+  // app-wide startMacLoop keeps app.mac live (media, volume, brightness)
   const np = $derived(mac?.media ?? null);
   let vol = $state<number | null>(null);
   let bri = $state<number | null>(null);
-  $effect(() => { if (mac?.volume !== null && mac?.volume !== undefined) vol = mac.volume; });
-  $effect(() => { if (mac?.brightness !== null && mac?.brightness !== undefined) bri = mac.brightness; });
+  // follow the Mac live, except right after you moved the slider yourself
+  let touched = { volume: 0, brightness: 0 };
+  $effect(() => { const v = mac?.volume; if (v !== null && v !== undefined && Date.now() - touched.volume > 2500) vol = v; });
+  $effect(() => { const v = mac?.brightness; if (v !== null && v !== undefined && Date.now() - touched.brightness > 2500) bri = v; });
   const timers: Record<string, ReturnType<typeof setTimeout>> = {};
   function slide(kind: 'volume' | 'brightness', v: number) {
+    touched[kind] = Date.now();
     if (kind === 'volume') vol = v; else bri = v;
     clearTimeout(timers[kind]);
     timers[kind] = setTimeout(() => macSend({ type: 'cmd', cmd: kind, value: v }), 220);

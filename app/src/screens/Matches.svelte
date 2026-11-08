@@ -2,7 +2,7 @@
   import Icon from '../components/Icon.svelte';
   import MatchRow from '../components/MatchRow.svelte';
   import XPostView from '../components/XPost.svelte';
-  import { app, loadMatches, loadX, type Match } from '../lib/store.svelte.ts';
+  import { app, loadMatches, loadX, onPull, type Match } from '../lib/store.svelte.ts';
   import { ago, fmtDay } from '../lib/util.ts';
 
   // Poll only while this screen is visible: every 30 s during a live match, else every 5 min.
@@ -35,6 +35,7 @@
   const fmtO = (o: number) => (Number.isInteger(o) ? String(o) : o.toFixed(1));
   const when = (iso?: string) => (iso ? `${fmtDay(new Date(iso).toLocaleDateString('en-CA'))} · ${new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}` : '');
   const fmtLabel = (x: Match) => (x.rule === 'ipl_mi' || teamOf(x) === 'mi' ? 'IPL' : x.format === 'test' ? 'Test' : x.format === 'odi' ? 'ODI' : 'T20I');
+  $effect(() => onPull('matches', async () => { await Promise.all([loadMatches(), loadX()]); return 'Scores updated'; }));
 </script>
 
 <main class="app stack page-enter">

@@ -52,7 +52,7 @@ function home() {
     matches: { live: [liveMatch], upcoming: [nextMatch], recent: [lastMatch] },
     news: { ...empty, updatedAt: ago(20), digest: {} },
     devices: [
-      { id: 'demo-mac', name: 'MacBook Pro', kind: 'mac', battery_pct: 86, charging: false, battery_at: ago(1), last_seen: ago(0) },
+      { id: 'demo-mac', name: 'MacBook Air', kind: 'mac', battery_pct: 86, charging: false, battery_at: ago(1), last_seen: ago(0) },
       { id: 'demo-phone', name: 'Galaxy S25', kind: 'phone', battery_pct: 92, charging: true, battery_at: ago(0), last_seen: ago(0) },
     ],
     inbox: [],

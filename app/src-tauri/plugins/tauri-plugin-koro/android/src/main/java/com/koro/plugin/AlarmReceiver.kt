@@ -20,6 +20,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 val id = i.getStringExtra("id") ?: return
                 val title = i.getStringExtra("title") ?: "Reminder"
                 val repeat = i.getStringExtra("repeat") ?: ""
+                if (id == Limits.ALARM_ID) { Limits.check(c); return }
                 // "days:<mask>" = daily alarm that only notifies on chosen weekdays (bit 0 = Monday)
                 val mask = repeat.removePrefix("days:").toIntOrNull()?.takeIf { repeat.startsWith("days:") }
                 val dow = (java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7

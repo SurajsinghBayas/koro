@@ -6,6 +6,8 @@ import { getMatches } from './cricket/engine.ts';
 import { getNews } from './news.ts';
 import { notify } from './push.ts';
 import { getWeather } from './weather.ts';
+import { getX } from './x.ts';
+import { getYt } from './yt.ts';
 
 /**
  * Push briefs: 8 AM (weather, today's tasks and reminders, India/MI matches, top headlines) and
@@ -69,6 +71,7 @@ async function compose(kind: 'morning' | 'night', facts: string[], fallback: str
 export async function morningBrief(db: Db) {
   const today = localDay();
   const facts: string[] = [], plain: string[] = [];
+  const all = await gatherToday(db).catch(() => [] as string[]);
   if (sent.loc) {
     try {
       const w = await getWeather(sent.loc.lat, sent.loc.lon, env.TZ);
@@ -91,7 +94,7 @@ export async function morningBrief(db: Db) {
   const top = heads.length ? heads : [...n.items.india, ...n.items.world].map((x) => x.title);
   facts.push(`Top headlines: ${top.slice(0, 4).join(' | ')}`);
   if (top[0]) plain.push(`📰 ${top[0]}`);
-  const body = await compose('morning', facts, plain.join('\n') || 'Have a good day.');
+  const body = await compose('morning', all.length > 2 ? all : facts, plain.join('\n') || 'Have a good day.');
   await notify(db, { kind: 'brief', title: 'Good morning ☀️', body, tag: 'brief-morning' });
   return body;
 }
@@ -134,4 +137,81 @@ export function startBriefs(db: Db) {
   };
   setTimeout(tick, 20_000);
   setInterval(tick, 60_000);
+}
+
+// ---------- "Today's brief" card on Home ----------
+/**
+ * Everything Koro knows about today, as fact lines. Empty categories are left out entirely, so the AI never
+ * writes "no tasks" filler.
+ */
+export async function gatherToday(db: Db) {
+  const today = localDay();
+  const out: string[] = [];
+  out.push(`Now: ${new Date().toLocaleString('en-IN', { timeZone: env.TZ, weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit', hour12: true })}`);
+  if (sent.loc) {
+    try {
+      const w = await getWeather(sent.loc.lat, sent.loc.lon, env.TZ);
+      out.push(`Weather ${w.place ?? ''}: ${Math.round(w.now.temp)}°C now (feels ${Math.round(w.now.feels)}°), high ${Math.round(w.today.max)}°, low ${Math.round(w.today.min)}°, rain chance ${w.today.rainChance}%${w.rainSoon ? ` (${w.rainSoon})` : ''}, UV ${Math.round(w.today.uv)}${w.aqi !== null ? `, AQI ${w.aqi}` : ''}, sunset ${fmtT(w.today.sunset)}`);
+    } catch { /* skip */ }
+  }
+  const tasks = await db.query<{ title: string; due_on: string | null; due_time: string | null }>(
+    `select title, due_on, due_time from tasks where deleted_at is null and done_at is null and (due_on is null or due_on <= $1) order by due_on nulls last, due_time nulls last, priority desc limit 8`, [today]);
+  const overdue = tasks.filter((t) => t.due_on && t.due_on < today);
+  if (tasks.length) out.push(`Open tasks (${tasks.length}${overdue.length ? `, ${overdue.length} overdue` : ''}): ${tasks.map((t) => `${t.due_time ? `${t.due_time} ` : ''}${t.title}`).join('; ')}`);
+  const doneToday = await db.query<{ n: number }>(`select count(*)::int as n from tasks where deleted_at is null and done_at >= now() - interval '18 hours'`);
+  if (doneToday[0]?.n) out.push(`Tasks finished today: ${doneToday[0].n}`);
+  const rem = await db.query<{ title: string; fire_at: Date }>(
+    `select title, fire_at from reminders where deleted_at is null and done_at is null and fire_at >= now() and fire_at < now() + interval '18 hours' order by fire_at limit 6`);
+  if (rem.length) out.push(`Coming up: ${rem.map((r) => `${fmtT(r.fire_at)} ${r.title}`).join('; ')}`);
+  const hs = await streaks(db, today);
+  if (hs.length) out.push(`Habits today: ${hs.map((h) => `${h.name} ${h.done ? '✓' : 'not yet'}${h.streak > 1 ? ` (${h.streak}-day streak)` : ''}`).join('; ')}`);
+  const water = await db.query<{ ml: number }>(`select coalesce(sum(ml), 0)::int as ml from water_logs where deleted_at is null and day = $1`, [today]);
+  if (water[0]?.ml) out.push(`Water so far: ${(water[0].ml / 1000).toFixed(2)} L`);
+  const grocery = await db.query<{ name: string }>(`select name from grocery_items where deleted_at is null and bought_at is null order by sort limit 8`);
+  if (grocery.length) out.push(`Grocery list: ${grocery.map((g) => g.name).join(', ')}`);
+  const m = getMatches();
+  const games = [...m.live.map((x) => `LIVE ${x.name}: ${x.status}`),
+    ...m.upcoming.filter((x) => x.startsAt && Date.parse(x.startsAt) - Date.now() < 36 * 3_600_000).map((x) => `${x.short?.join(' vs ') ?? x.teams.join(' vs ')} ${localDay(new Date(x.startsAt!)) === today ? 'today' : 'tomorrow'} at ${fmtT(x.startsAt!)}`),
+    ...m.recent.filter((x) => Date.now() - Date.parse(x.updatedAt) < 20 * 3_600_000).slice(0, 1).map((x) => `Result: ${x.name}: ${x.status}`)];
+  if (games.length) out.push(`India / MI cricket: ${games.join('; ')}`);
+  const x = getX();
+  const buzz = x.cricket.filter((p) => Date.now() - Date.parse(p.createdAt) < 12 * 3_600_000).sort((a, b) => b.likes - a.likes).slice(0, 2);
+  if (buzz.length) out.push(`Cricket buzz on X: ${buzz.map((p) => p.text.replace(/\s+/g, ' ').slice(0, 140)).join(' | ')}`);
+  if (x.digest?.lines.length && Date.now() - Date.parse(x.digest.at) < 12 * 3_600_000) out.push(`People you follow on X: ${x.digest.lines.slice(0, 2).join(' | ')}`);
+  const n = getNews();
+  const heads = [...(n.digest?.india?.stories ?? []), ...(n.digest?.world?.stories ?? []), ...(n.digest?.ai?.stories ?? [])].map((s) => s.title);
+  const top = heads.length ? heads : [...n.items.india, ...n.items.world, ...n.items.ai].map((i) => i.title);
+  if (top.length) out.push(`Headlines: ${top.slice(0, 5).join(' | ')}`);
+  const yt = getYt().videos.filter((v) => Date.now() - Date.parse(v.publishedAt) < 30 * 3_600_000);
+  if (yt.length) out.push(`New YouTube videos: ${yt.slice(0, 3).map((v) => `${v.channel}: ${v.title}`).join(' | ')}`);
+  const saved = await db.query<{ n: number }>(`select count(*)::int as n from saved where deleted_at is null and read_at is null and status = 'ready'`);
+  if (saved[0]?.n) out.push(`Unread in Read later: ${saved[0].n}`);
+  const dev = await db.query<{ name: string; battery_pct: number | null; charging: boolean | null }>(`select name, battery_pct, charging from devices`);
+  const low = dev.filter((d) => d.battery_pct !== null && d.battery_pct < 25 && !d.charging);
+  if (low.length) out.push(`Low battery: ${low.map((d) => `${d.name} ${d.battery_pct}%`).join(', ')}`);
+  return out;
+}
+
+type HomeBrief = { text: string; at: string; day: string };
+let homeBrief: HomeBrief | null = loadSnapshot<HomeBrief | null>('brief', null);
+let making: Promise<void> | null = null;
+export const getTodayBrief = () => homeBrief;
+
+/** Regenerated at most every 90 min (and on a new day). Never blocks a request. */
+export function refreshTodayBrief(db: Db, force = false) {
+  if (!aiEnabled() || making) return;
+  const day = localDay();
+  if (!force && homeBrief && homeBrief.day === day && Date.now() - Date.parse(homeBrief.at) < 90 * 60_000) return;
+  making = (async () => {
+    try {
+      const facts = await gatherToday(db);
+      const text = await chat([
+        { role: 'system', content: 'You write the "Today" card at the top of a personal app for one person in India. 4 short lines (max 85 characters each), plain text, each starting with one fitting emoji. Pick the most useful facts right now: what is next or overdue, weather worth acting on (rain, heat, AQI), cricket if there is any, then one interesting headline or video. Mention only things present in the facts; never say something is empty, missing or "no …". No greetings. Use ONLY the facts given.' },
+        { role: 'user', content: facts.join('\n') },
+      ], 300, 30_000);
+      const lines = text.split('\n').map((l) => l.replace(/^[-•*\d.\s]+(?=\p{Extended_Pictographic})/u, '').trim()).filter(Boolean).slice(0, 4);
+      if (lines.length) { homeBrief = { text: lines.join('\n'), at: new Date().toISOString(), day }; saveSnapshot('brief', homeBrief); console.log('[briefs] home brief refreshed'); }
+    } catch (e) { console.warn('[briefs] home brief failed:', (e as Error).message); }
+    finally { making = null; }
+  })();
 }

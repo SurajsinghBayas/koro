@@ -90,6 +90,16 @@ export const native = {
 
   /** What any app is playing (Spotify, YT Music…). Album art only when `artKey` differs from the current track. */
   media: (artKey?: string) => (isNative ? tryCall<NowPlaying | null>('media', { artKey: artKey ?? '' }, null) : Promise.resolve(mockMedia(artKey))),
+  setLimits: (limits: Record<string, { min: number; label: string }>) => tryCall('setLimits', { limits }, null),
+  /** Save to Downloads/Koro. Browser preview: a normal download. */
+  async saveFile(f: { name: string; text?: string; mime?: string; md?: string; pdf?: boolean }): Promise<{ uri?: string; error?: string }> {
+    if (isNative) return tryCall('saveFile', f, { error: 'Not available' });
+    if (f.pdf) { const w = window.open('', '_blank'); w?.document.write(`<pre style="white-space:pre-wrap;font:14px/1.5 system-ui">${(f.md ?? '').replace(/</g, '&lt;')}</pre>`); w?.print(); return { uri: 'print' }; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([f.text ?? ''], { type: f.mime ?? 'text/markdown' })); a.download = f.name; a.click();
+    return { uri: a.href };
+  },
+  shareText: (text: string, title: string) => (isNative ? tryCall('shareText', { text, title }, null) : navigator.share?.({ text, title }).catch(() => {})),
+  openUri: (uri: string, mime: string) => tryCall('openUri', { uri, mime }, null),
   mediaQueue: (): Promise<MediaQueue> => (isNative ? tryCall<MediaQueue>('mediaQueue', {}, { items: [], customs: [] }) : Promise.resolve({
     items: [{ id: 1, title: 'Kesariya', subtitle: 'Arijit Singh', active: true }, { id: 2, title: 'Apna Bana Le', subtitle: 'Arijit Singh', active: false }, { id: 3, title: 'Tum Hi Ho', subtitle: 'Arijit Singh', active: false }],
     customs: [{ action: 'like', name: 'Like' }, { action: 'shuffle', name: 'Shuffle' }, { action: 'repeat', name: 'Repeat' }], package: 'com.google.android.apps.youtube.music' })),

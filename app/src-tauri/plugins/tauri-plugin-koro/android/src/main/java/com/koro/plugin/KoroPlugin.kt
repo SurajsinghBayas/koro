@@ -346,6 +346,40 @@ class KoroPlugin(private val activity: Activity) : Plugin(activity) {
         invoke.resolve(JSObject().put("ok", Media.control(ctx, a.optString("action"), a.optLong("pos"))))
     }
 
+    /** {limits: {pkg: {min, label}}} — daily per-app limits, enforced in the background. */
+    @Command
+    fun setLimits(invoke: Invoke) {
+        Limits.set(ctx, invoke.getArgs().optJSONObject("limits") ?: JSONObject())
+        invoke.resolve()
+    }
+
+    /** Save a file to Downloads/Koro: {name, mime, text} or {name, md, pdf: true}. Returns {uri}. */
+    @Command
+    fun saveFile(invoke: Invoke) {
+        val a = invoke.getArgs()
+        Thread {
+            try {
+                val uri = if (a.optBoolean("pdf")) Files.savePdf(ctx, a.optString("name", "Koro.pdf"), a.optString("md"))
+                          else Files.saveText(ctx, a.optString("name", "Koro.md"), a.optString("mime", "text/markdown"), a.optString("text"))
+                invoke.resolve(JSObject().put("uri", uri))
+            } catch (e: Exception) { invoke.resolve(JSObject().put("error", e.message ?: "Couldn't save")) }
+        }.start()
+    }
+
+    @Command
+    fun shareText(invoke: Invoke) {
+        val a = invoke.getArgs()
+        try { Files.share(activity, a.optString("text"), a.optString("title", "Koro")) } catch (_: Exception) { }
+        invoke.resolve()
+    }
+
+    @Command
+    fun openUri(invoke: Invoke) {
+        val a = invoke.getArgs()
+        try { Files.open(activity, a.optString("uri"), a.optString("mime", "*/*")) } catch (_: Exception) { }
+        invoke.resolve()
+    }
+
     @Command
     fun mediaQueue(invoke: Invoke) { invoke.resolve(Media.queue(ctx)) }
 

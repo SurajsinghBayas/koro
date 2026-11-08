@@ -4,31 +4,23 @@ import { parseQuick } from '../../../shared/quickadd.ts';
 import type { Device } from '../auth.ts';
 import type { Db } from '../db.ts';
 import { aiEnabled, env } from '../env.ts';
-import { aiParse, aiParseMulti, getBrief, maybeRefreshBrief } from '../services/ai.ts';
-import { morningBrief, nightBrief, rememberLocation } from '../services/briefs.ts';
+import { aiParse, aiParseMulti } from '../services/ai.ts';
+import { getTodayBrief, morningBrief, nightBrief, refreshTodayBrief, rememberLocation } from '../services/briefs.ts';
 import { getMatches } from '../services/cricket/engine.ts';
 import { getNews, type NewsCat } from '../services/news.ts';
 import { notify, pushEnabled } from '../services/push.ts';
 import { onXIngest } from '../services/xnotify.ts';
 import { CRICKET_HANDLES, getX, ingest } from '../services/x.ts';
-import { clipToPhone, currentSeq, MAC_CMDS, macOnline, nextEvents, pushToMac, status as macStatus } from '../services/mac.ts';
+import { clipToPhone, cmdToPhone, currentSeq, MAC_CMDS, macMedia, macMediaNow, macOnline, nextEvents, phone, PHONE_CMDS, pushToMac, status as macStatus } from '../services/mac.ts';
 import { addSaved } from '../services/saved.ts';
 import { getWeather } from '../services/weather.ts';
 import { getLyrics } from '../services/lyrics.ts';
-import { addChannel, getYt, pendingTranscripts, putTranscript, refreshYt, removeChannel } from '../services/yt.ts';
+import { addChannel, explainVideo, getYt, pendingTranscripts, putTranscript, refreshYt, removeChannel } from '../services/yt.ts';
 
 type Env = { Variables: { device: Device } };
 
 export function apiRoutes(db: Db) {
   const r = new Hono<Env>();
-
-  const briefCtx = () => {
-    const m = getMatches();
-    return {
-      matches: [...m.live.map((x) => `${x.summary.title}: ${x.summary.body}`), ...m.upcoming.slice(0, 2).map((x) => `${x.name} at ${x.startsAt}`)],
-      headlines: [...getNews().items.india.slice(0, 2), ...getNews().items.world.slice(0, 2), ...getNews().items.ai.slice(0, 2)].map((n) => n.title),
-    };
-  };
 
   /** Everything the Home screen needs in one small response. */
   r.get('/home', async (c) => {
@@ -36,11 +28,11 @@ export function apiRoutes(db: Db) {
     const matches = getMatches();
     const devices = await db.query('select id, name, kind, battery_pct, charging, battery_at, last_seen from devices order by kind, name');
     const inbox = await db.query('select id, kind, title, body, data, created_at from inbox order by id desc limit 15');
-    maybeRefreshBrief(db, briefCtx);
+    refreshTodayBrief(db);
     const body = {
       now: new Date().toISOString(),
       me: c.get('device'),
-      brief: getBrief(),
+      brief: getTodayBrief(),
       matches: { live: matches.live, upcoming: matches.upcoming.slice(0, 3), recent: matches.recent.slice(0, 2).map(({ innings, ...m }) => ({ ...m, innings })) },
       news: {
         world: news.items.world.slice(0, 4), india: news.items.india.slice(0, 4), ai: news.items.ai.slice(0, 4),
@@ -147,7 +139,7 @@ export function apiRoutes(db: Db) {
     return c.json({ ok: true, body: await (k === 'morning' ? morningBrief(db) : nightBrief(db)) });
   });
 
-  r.post('/ai/brief/refresh', (c) => { maybeRefreshBrief(db, briefCtx, true); return c.json({ ok: true, queued: aiEnabled() }); });
+  r.post('/ai/brief/refresh', (c) => { refreshTodayBrief(db, true); return c.json({ ok: true, queued: aiEnabled() }); });
 
   // ---------- lyrics ----------
   r.get('/lyrics', async (c) => {
@@ -176,18 +168,51 @@ export function apiRoutes(db: Db) {
   });
   r.post('/mac/status', async (c) => {
     if (!isMac(c)) return c.json({ error: 'Mac only' }, 403);
-    const b = z.object({ volume: z.number().min(0).max(100).nullable().optional(), muted: z.boolean().nullable().optional() }).safeParse(await c.req.json().catch(() => null));
+    const b = z.object({ volume: z.number().min(0).max(100).nullable().optional(), muted: z.boolean().nullable().optional(),
+      brightness: z.number().min(0).max(100).nullable().optional(), awake: z.boolean().optional() }).safeParse(await c.req.json().catch(() => null));
     if (!b.success) return c.json({ error: 'volume/muted' }, 400);
     Object.assign(macStatus, { volume: b.data.volume ?? null, muted: b.data.muted ?? null, at: Date.now() });
+    if (b.data.brightness !== undefined) macStatus.brightness = b.data.brightness;
+    if (b.data.awake !== undefined) macStatus.awake = b.data.awake;
     return c.json({ ok: true });
   });
-  r.get('/mac/status', (c) => c.json({ online: macOnline(), volume: macStatus.volume, muted: macStatus.muted, at: macStatus.at || null }));
+  r.get('/mac/status', (c) => c.json({ online: macOnline(), media: macMediaNow(), volume: macStatus.volume, muted: macStatus.muted, brightness: macStatus.brightness, awake: macStatus.awake, at: macStatus.at || null }));
+
+  r.post('/mac/media', async (c) => {
+    if (!isMac(c)) return c.json({ error: 'Mac only' }, 403);
+    const b = z.object({ title: z.string().max(300), artist: z.string().max(300).optional(), app: z.string().max(80).optional(),
+      url: z.string().max(500).optional(), playing: z.boolean().optional() }).passthrough().safeParse(await c.req.json().catch(() => null));
+    if (!b.success) return c.json({ error: 'bad media' }, 400);
+    Object.assign(macMedia, { title: b.data.title, artist: b.data.artist ?? '', app: b.data.app ?? '', url: b.data.url ?? '', playing: !!b.data.playing, at: Date.now() });
+    return c.json({ ok: true });
+  });
+
+  // ---------- Mac → phone ----------
+  /** The phone's notification listener reports what's playing, so the Mac menu bar can show it. */
+  r.post('/phone/status', async (c) => {
+    const b = z.object({ title: z.string().max(300).optional(), artist: z.string().max(300).optional(), app: z.string().max(80).optional(), playing: z.boolean().optional() })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!b.success) return c.json({ error: 'bad status' }, 400);
+    Object.assign(phone, { title: b.data.title ?? '', artist: b.data.artist ?? '', app: b.data.app ?? '', playing: !!b.data.playing, at: Date.now() });
+    return c.json({ ok: true });
+  });
+  r.get('/phone/status', async (c) => {
+    const d = await db.query<{ name: string; battery_pct: number | null; charging: boolean | null; battery_at: Date | null }>(
+      "select name, battery_pct, charging, battery_at from devices where kind = 'phone' order by last_seen desc limit 1");
+    return c.json({ device: d[0] ?? null, media: phone.at && Date.now() - phone.at < 6 * 3_600_000 ? phone : null });
+  });
+  r.post('/phone/cmd', async (c) => {
+    const b = z.object({ cmd: z.enum(PHONE_CMDS), url: z.string().url().max(2000).optional() }).safeParse(await c.req.json().catch(() => null));
+    if (!b.success) return c.json({ error: `cmd must be one of ${PHONE_CMDS.join(', ')}` }, 400);
+    const r2 = await cmdToPhone(db, b.data.cmd, b.data.url ?? '');
+    return c.json({ ok: true, sent: r2.sent });
+  });
   /** Phone → Mac: clipboard text, a link to open, or a command. */
   r.post('/mac/send', async (c) => {
     const b = z.union([
       z.object({ type: z.literal('clip'), text: z.string().min(1).max(20_000) }),
       z.object({ type: z.literal('link'), url: z.string().url().max(4000), title: z.string().max(300).optional() }),
-      z.object({ type: z.literal('cmd'), cmd: z.enum(MAC_CMDS), value: z.number().min(0).max(100).optional() }),
+      z.object({ type: z.literal('cmd'), cmd: z.enum(MAC_CMDS), value: z.number().min(0).max(100).optional(), app: z.string().regex(/^[\w .&'+-]{1,60}$/).optional() }),
     ]).safeParse(await c.req.json().catch(() => null));
     if (!b.success) return c.json({ error: 'Invalid request' }, 400);
     pushToMac(b.data);
@@ -218,10 +243,19 @@ export function apiRoutes(db: Db) {
   r.delete('/yt/channels/:id', (c) => { removeChannel(c.req.param('id')); return c.json({ ok: true }); });
   r.post('/yt/refresh', async (c) => { await refreshYt(); return c.json(getYt()); });
   r.get('/yt/pending', (c) => c.json({ videos: pendingTranscripts() }));
+  /** Full written explanation of a video (POST asks for it, both return status / the Markdown). */
+  const explain = async (c: any) => {
+    const id = c.req.param('id');
+    if (!/^[\w-]{11}$/.test(id)) return c.json({ error: 'bad id' }, 400);
+    return c.json(await explainVideo(id));
+  };
+  r.post('/yt/:id/explain', explain);
+  r.get('/yt/:id/explain', explain);
+
   r.post('/yt/transcript', async (c) => {
-    const b = z.object({ id: z.string().regex(/^[\w-]{11}$/), text: z.string().max(400_000).nullable() }).safeParse(await c.req.json().catch(() => null));
+    const b = z.object({ id: z.string().regex(/^[\w-]{11}$/), text: z.string().max(400_000).nullable().optional(), description: z.string().max(20_000).nullable().optional() }).safeParse(await c.req.json().catch(() => null));
     if (!b.success) return c.json({ error: 'id and text required' }, 400);
-    return c.json({ ok: await putTranscript(b.data.id, b.data.text) });
+    return c.json({ ok: await putTranscript(b.data.id, b.data.text ?? null, b.data.description) });
   });
 
   return r;

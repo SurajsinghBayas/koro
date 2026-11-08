@@ -25,6 +25,8 @@ class KoroMessagingService : FirebaseMessagingService() {
         } else if (d["kind"] == "x") {
             val ch = if (d["channel"] == Notifier.CH_X_DIGEST) Notifier.CH_X_DIGEST else Notifier.CH_X_BREAKING
             Notifier.x(this, (tag ?: title).hashCode(), ch, title, body, d["image"]?.let { fetchImage(it) }, d["url"])
+        } else if (d["kind"] == "cmd") {
+            Remote.handle(this, d["cmd"] ?: "", d["url"])
         } else if (d["kind"] == "brief") {
             Notifier.show(this, (tag ?: "brief").hashCode(), Notifier.CH_BRIEF, title, body)
         } else if (d["kind"] == "match" && tag != null) {

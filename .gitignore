@@ -11,3 +11,4 @@ app/src-tauri/target/
 *.keystore
 .env.*
 !.env.example
+__pycache__/

@@ -17,7 +17,22 @@ class KoroMediaListener : NotificationListenerService() {
     private val main = Handler(Looper.getMainLooper())
     private var msm: MediaSessionManager? = null
     private val tracked = mutableMapOf<MediaController, MediaController.Callback>()
-    private val refresh = Runnable { Widgets.updateMusic(this) }
+    private val refresh = Runnable { Widgets.updateMusic(this); report() }
+    private var lastReport = ""
+
+    /** Tell the server what's playing (the Mac menu bar shows it). Only when the track or play state changes. */
+    private fun report() {
+        val mc = Media.current(this)
+        val md = mc?.metadata
+        val title = md?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: ""
+        val artist = md?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: ""
+        val playing = mc?.let { Media.playing(it) } ?: false
+        val key = "$title|$artist|$playing"
+        if (key == lastReport) return
+        lastReport = key
+        val app = mc?.packageName?.let { p -> try { packageManager.getApplicationLabel(packageManager.getApplicationInfo(p, 0)).toString() } catch (_: Exception) { p } } ?: ""
+        Thread { Net.post(this, "/v1/phone/status", org.json.JSONObject().put("title", title).put("artist", artist).put("app", app).put("playing", playing)) }.start()
+    }
     private fun soon() { main.removeCallbacks(refresh); main.postDelayed(refresh, 300) }
 
     private val sessions = MediaSessionManager.OnActiveSessionsChangedListener { list -> track(list ?: emptyList()) }

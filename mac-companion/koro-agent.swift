@@ -1,7 +1,10 @@
-// Koro Mac agent: clipboard sync + remote control from the phone.
+// Koro Mac agent: clipboard sync, remote control from the phone, and a menu-bar remote for the phone.
 //   * Mac → phone: text you copy is sent to the phone (passwords from password managers are skipped).
-//   * phone → Mac: clipboard text, links (opened in your browser), and commands: lock, sleep,
-//     play/pause/next/prev, volume, mute.
+//   * phone → Mac: clipboard text, links (opened in your browser), and commands: lock, sleep, screen off,
+//     play/pause/next/prev, volume, mute, brightness, keep awake, ring (find my Mac), open an app.
+//     Volume/brightness changes show an on-screen bar like the keyboard keys do.
+//   * menu bar (phone icon): play/pause/next on the phone, its volume, find my phone, send clipboard or the
+//     current browser tab to the phone, clipboard sync on/off.
 // Built and kept running by koro-mac.sh (launchd, KeepAlive). Reads SERVER/TOKEN (and CLIP_SYNC=0 to pause) from ~/.koro.
 import AppKit
 import Foundation
@@ -21,8 +24,19 @@ func readConf() -> [String: String] {
     return out
 }
 var conf = readConf()
-guard let server = conf["SERVER"], let token = conf["TOKEN"] else { log("not paired: run koro-mac.sh pair first"); exit(1) }
+let server: String = conf["SERVER"] ?? ""
+let token: String = conf["TOKEN"] ?? ""
+if server.isEmpty || token.isEmpty { log("not paired: run koro-mac.sh pair first"); exit(1) }
 func clipSyncOn() -> Bool { readConf()["CLIP_SYNC"] != "0" }
+func setClipSync(_ on: Bool) {
+    let path = NSHomeDirectory() + "/.koro"
+    var lines = ((try? String(contentsOfFile: path, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init).filter { !$0.hasPrefix("CLIP_SYNC=") }
+    if !on { lines.append("CLIP_SYNC=0") }
+    try? (lines.joined(separator: "\n") + "\n").write(toFile: path, atomically: true, encoding: .utf8)
+}
+
+let nsapp = NSApplication.shared
+nsapp.setActivationPolicy(.accessory) // menu-bar only, no Dock icon
 
 // ---------- HTTP ----------
 func request(_ method: String, _ path: String, body: [String: Any]? = nil, timeout: TimeInterval = 20) -> [String: Any]? {
@@ -69,11 +83,115 @@ let mediaRemote: MRSend? = {
 }()
 func media(_ cmd: String) {
     let code: UInt32 = cmd == "toggle" ? 2 : cmd == "next" ? 4 : 5
-    if let send = mediaRemote, send(code, nil) { return }
     let verb = cmd == "toggle" ? "playpause" : cmd == "next" ? "next track" : "previous track"
-    for app in ["Spotify", "Music"] where NSRunningApplication.runningApplications(withBundleIdentifier: app == "Spotify" ? "com.spotify.client" : "com.apple.Music").count > 0 {
+    defer { DispatchQueue.global().asyncAfter(deadline: .now() + 0.8) { lastMacMedia = ""; watchMacMedia() } }
+    // Music / Spotify playing: talk to it directly (always works)
+    if macMediaSource == "Spotify" || macMediaSource == "Music" { osa("tell application \"\(macMediaSource)\" to \(verb)"); return }
+    // anything else (a browser tab): the keyboard media key, else the system's media remote
+    if mediaKey(cmd) { return }
+    if let send = mediaRemote, send(code, nil) { return }
+    for app in ["Spotify", "Music"] where running(app == "Spotify" ? "com.spotify.client" : "com.apple.Music") {
         osa("tell application \"\(app)\" to \(verb)"); return
     }
+}
+
+// ---------- what's playing on the Mac (synced to the phone) ----------
+typealias MRInfo = @convention(c) (DispatchQueue, @escaping ([String: Any]) -> Void) -> Void
+let mrInfo: MRInfo? = {
+    guard let h = dlopen("/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote", RTLD_NOW),
+          let sym = dlsym(h, "MRMediaRemoteGetNowPlayingInfo") else { return nil }
+    return unsafeBitCast(sym, to: MRInfo.self)
+}()
+var macMediaSource = ""   // app name of what we last reported, so play/pause goes to the right place
+func running(_ id: String) -> Bool { !NSRunningApplication.runningApplications(withBundleIdentifier: id).isEmpty }
+func pidOf(_ id: String) -> Int32? { NSRunningApplication.runningApplications(withBundleIdentifier: id).first?.processIdentifier }
+
+/// Is this process holding an audio assertion right now (i.e. making sound)?
+func makingSound(_ pid: Int32) -> Bool {
+    let p = Process(), out = Pipe(); p.executableURL = URL(fileURLWithPath: "/usr/bin/pmset"); p.arguments = ["-g", "assertions"]; p.standardOutput = out
+    guard (try? p.run()) != nil else { return false }
+    let s = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""; p.waitUntilExit()
+    return s.split(separator: "\n").contains { l in
+        let low = l.lowercased()
+        return (low.contains("audio") || low.contains("playing")) && (l.contains("pid \(pid)(") || l.contains("Created for PID: \(pid)."))
+    }
+}
+
+func cleanTabTitle(_ t: String) -> (String, String) {
+    var s = t.replacingOccurrences(of: #"^\(\d+\)\s*"#, with: "", options: .regularExpression)
+    for suf in [" - YouTube Music", " - YouTube"] where s.hasSuffix(suf) { s = String(s.dropLast(suf.count)) }
+    let parts = s.components(separatedBy: " • ")
+    return parts.count > 1 ? (parts[0], parts[1]) : (s, "")
+}
+
+func nowPlayingMac() -> [String: Any]? {
+    // 1) the system's Now Playing (only answers on macOS versions that still allow it)
+    if let get = mrInfo {
+        var info: [String: Any] = [:]
+        let sem = DispatchSemaphore(value: 0)
+        get(DispatchQueue.global()) { info = $0; sem.signal() }
+        _ = sem.wait(timeout: .now() + 1.5)
+        if let t = info["kMRMediaRemoteNowPlayingInfoTitle"] as? String, !t.isEmpty {
+            return ["title": t, "artist": info["kMRMediaRemoteNowPlayingInfoArtist"] as? String ?? "", "app": "Mac",
+                    "playing": ((info["kMRMediaRemoteNowPlayingInfoPlaybackRate"] as? Double) ?? 0) > 0]
+        }
+    }
+    // 2) Music / Spotify
+    for (id, app) in [("com.spotify.client", "Spotify"), ("com.apple.Music", "Music")] where running(id) {
+        if let r = osa("tell application \"\(app)\" to if player state is not stopped then return (player state as string) & \"\t\" & name of current track & \"\t\" & artist of current track"),
+           !r.isEmpty {
+            let f = r.components(separatedBy: "\t")
+            if f.count >= 3 { return ["title": f[1], "artist": f[2], "app": app, "playing": f[0] == "playing"] }
+        }
+    }
+    // 3) a YouTube / YouTube Music tab in a browser
+    let browsers = [("com.google.Chrome", "Google Chrome"), ("company.thebrowser.Browser", "Arc"), ("com.brave.Browser", "Brave Browser"), ("com.apple.Safari", "Safari")]
+    for (id, name) in browsers where running(id) {
+        let titleProp = id == "com.apple.Safari" ? "name" : "title" // Safari tabs call it "name"
+        let script = """
+        tell application "\(name)"
+          repeat with w in windows
+            repeat with t in tabs of w
+              set u to URL of t
+              if u contains "music.youtube.com/watch" or u contains "youtube.com/watch" then return u & "\t" & (\(titleProp) of t)
+            end repeat
+          end repeat
+        end tell
+        return ""
+        """
+        if let r = osa(script), !r.isEmpty {
+            let f = r.components(separatedBy: "\t")
+            let (title, artist) = cleanTabTitle(f.count > 1 ? f[1] : "")
+            if title.isEmpty { continue }
+            let ytm = f[0].contains("music.youtube.com")
+            return ["title": title, "artist": artist, "app": ytm ? "YouTube Music (\(name))" : "YouTube (\(name))", "url": f[0],
+                    "playing": pidOf(id).map(makingSound) ?? false, "browser": name]
+        }
+    }
+    return nil
+}
+
+var lastMacMedia = "", lastMacMediaAt = Date.distantPast
+func watchMacMedia() {
+    let np = nowPlayingMac()
+    macMediaSource = (np?["browser"] as? String) ?? (np?["app"] as? String) ?? ""
+    let key = np.map { "\($0["title"] ?? "")|\($0["artist"] ?? "")|\($0["playing"] ?? "")" } ?? "none"
+    if key == lastMacMedia && Date().timeIntervalSince(lastMacMediaAt) < 60 { return }
+    lastMacMedia = key; lastMacMediaAt = Date()
+    _ = request("POST", "/v1/mac/media", body: np ?? ["title": ""])
+}
+
+/// The keyboard play/pause/next/prev key (needs Accessibility permission; used for browsers).
+func mediaKey(_ cmd: String) -> Bool {
+    guard AXIsProcessTrusted() else { return false }
+    let key: Int = cmd == "toggle" ? 16 : cmd == "next" ? 17 : 18 // NX_KEYTYPE_PLAY / NEXT / PREVIOUS
+    for down in [true, false] {
+        let flags = NSEvent.ModifierFlags(rawValue: down ? 0xa00 : 0xb00)
+        let data1 = (key << 16) | ((down ? 0xa : 0xb) << 8)
+        NSEvent.otherEvent(with: .systemDefined, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+                           context: nil, subtype: 8, data1: data1, data2: -1)?.cgEvent?.post(tap: .cghidEventTap)
+    }
+    return true
 }
 
 typealias LockFn = @convention(c) () -> Void
@@ -85,10 +203,102 @@ func lockScreen() {
     shell("/usr/bin/pmset", ["displaysleepnow"]) // locks when "require password immediately" is on
 }
 
+// ---------- brightness (built-in display, via DisplayServices; no permissions needed) ----------
+typealias DSGet = @convention(c) (UInt32, UnsafeMutablePointer<Float>) -> Int32
+typealias DSSet = @convention(c) (UInt32, Float) -> Int32
+let ds = dlopen("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_NOW)
+let dsGet: DSGet? = ds.flatMap { dlsym($0, "DisplayServicesGetBrightness") }.map { unsafeBitCast($0, to: DSGet.self) }
+let dsSet: DSSet? = ds.flatMap { dlsym($0, "DisplayServicesSetBrightness") }.map { unsafeBitCast($0, to: DSSet.self) }
+func brightness() -> Int? {
+    var v: Float = 0
+    guard let g = dsGet, g(CGMainDisplayID(), &v) == 0 else { return nil }
+    return Int((v * 100).rounded())
+}
+func setBrightness(_ pct: Int) {
+    let v = Float(max(0, min(100, pct))) / 100
+    _ = dsSet?(CGMainDisplayID(), v)
+}
+
+// ---------- keep awake / ring / open app ----------
+var caffeinate: Process?
+func setAwake(_ on: Bool) {
+    if on, caffeinate == nil {
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate"); p.arguments = ["-dis"]
+        try? p.run(); caffeinate = p
+    } else if !on { caffeinate?.terminate(); caffeinate = nil }
+}
+func ringMac() {
+    DispatchQueue.main.async {
+        notifyMac("Find my Mac", "Your phone is looking for this Mac")
+        var n = 0
+        Timer.scheduledTimer(withTimeInterval: 0.9, repeats: true) { t in
+            NSSound(named: "Glass")?.play(); n += 1
+            if n >= 8 { t.invalidate() }
+        }
+    }
+}
+func openApp(_ name: String) {
+    guard name.range(of: #"^[\w .&'+-]{1,60}$"#, options: .regularExpression) != nil else { return }
+    shell("/usr/bin/open", ["-a", name])
+}
+
+// ---------- on-screen bar (like the keyboard's volume / brightness HUD) ----------
+final class Bars: NSView {
+    var value: Double = 0
+    override func draw(_ dirtyRect: NSRect) {
+        let n = 16, gap: CGFloat = 3
+        let w = (bounds.width - gap * CGFloat(n - 1)) / CGFloat(n)
+        for i in 0..<n {
+            let r = NSRect(x: CGFloat(i) * (w + gap), y: 0, width: w, height: bounds.height)
+            (Double(i) < value * Double(n) - 0.01 ? NSColor.white : NSColor.white.withAlphaComponent(0.18)).setFill()
+            NSBezierPath(roundedRect: r, xRadius: 1.5, yRadius: 1.5).fill()
+        }
+    }
+}
+final class HUD {
+    static let shared = HUD()
+    let panel: NSPanel
+    let icon = NSImageView()
+    let label = NSTextField(labelWithString: "")
+    let bars = Bars()
+    var hideWork: DispatchWorkItem?
+    init() {
+        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 300, height: 66), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.level = .statusBar; panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = true
+        panel.ignoresMouseEvents = true; panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        let fx = NSVisualEffectView(frame: panel.contentView!.bounds)
+        fx.material = .hudWindow; fx.state = .active; fx.blendingMode = .behindWindow
+        fx.wantsLayer = true; fx.layer?.cornerRadius = 18; fx.layer?.masksToBounds = true; fx.autoresizingMask = [.width, .height]
+        panel.contentView?.addSubview(fx)
+        icon.frame = NSRect(x: 16, y: 17, width: 32, height: 32); icon.contentTintColor = .white
+        label.frame = NSRect(x: 60, y: 36, width: 220, height: 18); label.textColor = .white; label.font = .systemFont(ofSize: 13, weight: .semibold)
+        bars.frame = NSRect(x: 60, y: 16, width: 222, height: 10)
+        [icon, label, bars].forEach { fx.addSubview($0) }
+    }
+    /// value 0…1; kind "volume" | "brightness" | "muted"
+    func show(_ kind: String, _ value: Double) {
+        DispatchQueue.main.async { [self] in
+            let sym = kind == "brightness" ? "sun.max.fill" : kind == "muted" || value <= 0 ? "speaker.slash.fill" : value < 0.34 ? "speaker.wave.1.fill" : value < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
+            icon.image = NSImage(systemSymbolName: sym, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 22, weight: .medium))
+            label.stringValue = kind == "brightness" ? "Display brightness · from phone" : "Volume · from phone"
+            bars.value = kind == "muted" ? 0 : value; bars.needsDisplay = true
+            if let scr = NSScreen.main {
+                let f = scr.visibleFrame
+                panel.setFrameOrigin(NSPoint(x: f.maxX - 300 - 14, y: f.maxY - 66 - 10))
+            }
+            panel.alphaValue = 1; panel.orderFrontRegardless()
+            hideWork?.cancel()
+            let w = DispatchWorkItem { [self] in NSAnimationContext.runAnimationGroup({ $0.duration = 0.35; panel.animator().alphaValue = 0 }) { self.panel.orderOut(nil) } }
+            hideWork = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: w)
+        }
+    }
+}
+
 func volumeStatus() -> [String: Any] {
     let v = Int(osa("output volume of (get volume settings)") ?? "") ?? -1
     let m = osa("output muted of (get volume settings)") == "true"
-    return ["volume": v >= 0 ? v : NSNull(), "muted": m]
+    return ["volume": v >= 0 ? v : NSNull(), "muted": m, "brightness": brightness() ?? NSNull(), "awake": caffeinate != nil]
 }
 func reportStatus() { _ = request("POST", "/v1/mac/status", body: volumeStatus()) }
 
@@ -149,13 +359,31 @@ func handle(_ e: [String: Any]) {
         case "sleep": shell("/usr/bin/pmset", ["sleepnow"])
         case "toggle", "next", "prev": media(cmd)
         case "volume": if let v = e["value"] as? Double { osa("set volume output volume \(Int(v)) without output muted") }
-        case "volup": osa("set volume output volume ((output volume of (get volume settings)) + 10) without output muted")
-        case "voldown": osa("set volume output volume ((output volume of (get volume settings)) - 10)")
+        case "volup": osa("set volume output volume ((output volume of (get volume settings)) + 6) without output muted")
+        case "voldown": osa("set volume output volume ((output volume of (get volume settings)) - 6)")
         case "mute": osa("set volume output muted (not (output muted of (get volume settings)))")
+        case "brightness": if let v = e["value"] as? Double { setBrightness(Int(v)) }
+        case "brightup": setBrightness((brightness() ?? 50) + 6)
+        case "brightdown": setBrightness((brightness() ?? 50) - 6)
+        case "displayoff": shell("/usr/bin/pmset", ["displaysleepnow"])
+        case "awake": setAwake(caffeinate == nil); notifyMac("Koro", caffeinate != nil ? "Mac will stay awake" : "Normal sleep restored")
+        case "ring": ringMac()
+        case "openapp": if let a = e["app"] as? String { openApp(a) }
+        case "workmode": // WhatsApp + Terminal + Gmail in Safari
+            openApp("WhatsApp"); openApp("Terminal")
+            shell("/usr/bin/open", ["-a", "Safari", "https://mail.google.com/"])
+            notifyMac("Work mode", "WhatsApp, Terminal and Gmail are open")
         case "battery": reportBattery(); reportStatus()
         default: break
         }
-        if cmd.hasPrefix("vol") || cmd == "mute" { reportStatus() }
+        if cmd.hasPrefix("vol") || cmd == "mute" {
+            let st = volumeStatus()
+            HUD.shared.show((st["muted"] as? Bool) == true ? "muted" : "volume", Double((st["volume"] as? Int) ?? 0) / 100)
+            _ = request("POST", "/v1/mac/status", body: st)
+        } else if cmd.hasPrefix("bright") {
+            HUD.shared.show("brightness", Double(brightness() ?? 0) / 100)
+            reportStatus()
+        } else if cmd == "awake" { reportStatus() }
     default: break
     }
 }
@@ -176,6 +404,91 @@ Thread.detachNewThread {
     }
 }
 
+// ---------- menu bar: remote for the phone ----------
+final class Menu: NSObject, NSMenuDelegate {
+    let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    let menu = NSMenu()
+    let header = NSMenuItem(title: "Phone", action: nil, keyEquivalent: "")
+    let playing = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    let clip = NSMenuItem(title: "Clipboard sync", action: nil, keyEquivalent: "")
+    let awake = NSMenuItem(title: "Keep Mac awake", action: nil, keyEquivalent: "")
+
+    override init() {
+        super.init()
+        item.button?.image = NSImage(systemSymbolName: "iphone.gen3", accessibilityDescription: "Koro")
+        item.button?.image?.isTemplate = true
+        menu.delegate = self
+        header.isEnabled = false; playing.isEnabled = false; playing.isHidden = true
+        menu.addItem(header); menu.addItem(playing); menu.addItem(.separator())
+        add("Play / Pause on phone", "playpause.fill") { phoneCmd("toggle") }
+        add("Next track", "forward.fill") { phoneCmd("next") }
+        add("Previous track", "backward.fill") { phoneCmd("prev") }
+        add("Phone volume up", "speaker.wave.3.fill") { phoneCmd("volup") }
+        add("Phone volume down", "speaker.wave.1.fill") { phoneCmd("voldown") }
+        menu.addItem(.separator())
+        add("Send clipboard to phone", "doc.on.clipboard") { sendClipboard() }
+        add("Send browser tab to phone", "safari") { sendTab() }
+        add("Find my phone", "bell.and.waves.left.and.right") { phoneCmd("ring") }
+        add("Work mode: WhatsApp, Terminal, Gmail", "briefcase.fill") { handle(["type": "cmd", "cmd": "workmode"]) }
+        menu.addItem(.separator())
+        clip.target = self; clip.action = #selector(toggleClip); menu.addItem(clip)
+        awake.target = self; awake.action = #selector(toggleAwake); menu.addItem(awake)
+        item.menu = menu
+    }
+    private var actions: [() -> Void] = []
+    private func add(_ title: String, _ symbol: String, _ fn: @escaping () -> Void) {
+        let i = NSMenuItem(title: title, action: #selector(run(_:)), keyEquivalent: "")
+        i.target = self; i.tag = actions.count; i.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        actions.append(fn); menu.addItem(i)
+    }
+    @objc func run(_ sender: NSMenuItem) { let fn = actions[sender.tag]; DispatchQueue.global().async { fn() } }
+    @objc func toggleClip() { setClipSync(!clipSyncOn()) }
+    @objc func toggleAwake() { setAwake(caffeinate == nil); DispatchQueue.global().async { reportStatus() } }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        clip.state = clipSyncOn() ? .on : .off
+        awake.state = caffeinate != nil ? .on : .off
+        DispatchQueue.global().async { [self] in
+            let r = request("GET", "/v1/phone/status", timeout: 6)
+            let d = r?["device"] as? [String: Any], m = r?["media"] as? [String: Any]
+            var h = (d?["name"] as? String) ?? "Phone"
+            if let p = d?["battery_pct"] as? Int { h += " · \(p)%" + ((d?["charging"] as? Bool) == true ? " ⚡" : "") }
+            let t = (m?["title"] as? String) ?? ""
+            DispatchQueue.main.async {
+                self.header.title = h
+                self.playing.isHidden = t.isEmpty
+                self.playing.title = t.isEmpty ? "" : "\((m?["playing"] as? Bool) == true ? "▶︎" : "❚❚")  \(t) — \((m?["artist"] as? String) ?? "")"
+            }
+        }
+    }
+}
+func phoneCmd(_ cmd: String, url: String? = nil) {
+    var body: [String: Any] = ["cmd": cmd]
+    if let url { body["url"] = url }
+    if request("POST", "/v1/phone/cmd", body: body) == nil { notifyMac("Koro", "Couldn't reach your phone") }
+}
+func sendClipboard() {
+    let text = DispatchQueue.main.sync { pb.string(forType: .string) ?? "" }.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return notifyMac("Koro", "Clipboard is empty") }
+    if request("POST", "/v1/clip", body: ["text": text]) != nil { notifyMac("Sent to phone", text) }
+}
+/// Front tab of whichever browser is running (asks for Automation permission the first time).
+func sendTab() {
+    let browsers = [("com.google.Chrome", "Google Chrome", "URL of active tab of front window"), ("company.thebrowser.Browser", "Arc", "URL of active tab of front window"),
+                    ("com.brave.Browser", "Brave Browser", "URL of active tab of front window"), ("com.apple.Safari", "Safari", "URL of front document")]
+    let front = DispatchQueue.main.sync { NSWorkspace.shared.frontmostApplication?.bundleIdentifier }
+    let order = browsers.sorted { a, _ in a.0 == front }
+    for (id, name, expr) in order where !NSRunningApplication.runningApplications(withBundleIdentifier: id).isEmpty {
+        if let url = osa("tell application \"\(name)\" to get \(expr)"), url.hasPrefix("http") {
+            phoneCmd("link", url: url); notifyMac("Sent to phone", url); return
+        }
+    }
+    notifyMac("Koro", "No browser tab found")
+}
+
+let menuBar = Menu()
 log("Koro agent running → \(server)  clipboard sync: \(clipSyncOn() ? "on" : "off")")
 Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { _ in checkClipboard() }
-RunLoop.main.run()
+let mediaQueue = DispatchQueue(label: "koro.media")
+Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { _ in mediaQueue.async { watchMacMedia() } }
+nsapp.run()

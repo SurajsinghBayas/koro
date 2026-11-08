@@ -93,29 +93,87 @@ def following_top(scan, top):
     return [r for r in rows if isinstance(r, dict)]
 
 
+def yt_description(url):
+    """The video description, read like a normal browser visit from this Mac (YouTube blocks cloud servers)."""
+    import re
+    req = urllib.request.Request(url, headers={
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36",
+        "accept-language": "en", "cookie": "SOCS=CAI; CONSENT=YES+"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        html = r.read().decode("utf-8", "replace")
+    m = re.search(r'"shortDescription":"((?:[^"\\]|\\.)*)"', html)
+    return json.loads('"' + m.group(1) + '"')[:4000] if m else ""
+
+
+YTDLP = os.path.join(HOME, ".local", "share", "uv", "tools", "agent-reach", "bin", "yt-dlp")
+
+
+def yt_dlp_subs(url):
+    """Subtitles straight from yt-dlp (used when Agent-Reach is pausing YouTube). Returns text, "" if none, None on error."""
+    import glob
+    import tempfile
+    if not os.path.exists(YTDLP):
+        return None
+    with tempfile.TemporaryDirectory() as d:
+        p = subprocess.run([YTDLP, "--skip-download", "--write-subs", "--write-auto-subs", "--sub-langs", "en.*,en,hi.*",
+                            "--sub-format", "json3", "-o", os.path.join(d, "s"), url], capture_output=True, text=True, timeout=180)
+        files = sorted(glob.glob(os.path.join(d, "*.json3")), key=lambda f: ("orig" in f, len(f)))
+        if not files:
+            return "" if p.returncode == 0 else None
+        with open(files[0]) as f:
+            j = json.load(f)
+    lines = []
+    for ev in j.get("events", []):
+        t = "".join(seg.get("utf8", "") for seg in ev.get("segs", []) or []).strip()
+        if t and t != "\n" and (not lines or lines[-1] != t):
+            lines.append(t)
+    return " ".join(lines)
+
+
 def yt_transcripts(server, token):
-    """Fetch subtitles for new YouTube videos (yt-dlp via Agent-Reach) so the server can summarise them."""
+    """Help the server summarise new YouTube videos: description (always) + subtitles for fresh ones (yt-dlp via Agent-Reach)."""
     pending = api(server, token, "/v1/yt/pending").get("videos", [])
+    sub_ok = True
     for v in pending:
-        p = subprocess.run([AGENT_REACH, "youtube", "subtitle", v["url"]], capture_output=True, text=True, timeout=240)
-        text = None
-        try:
-            d = json.loads(p.stdout)
-            if d.get("ok"):
-                text = "\n".join((it.get("text") or "") for it in d.get("items", [])).strip() or None
-            elif (d.get("error") or {}).get("code") in STOP_CODES:
-                break
-            else:
-                text = ""  # no subtitles for this video: tell the server so it uses the description
-        except ValueError:
-            continue
-        api(server, token, "/v1/yt/transcript", {"id": v["id"], "text": text})
+        body = {"id": v["id"]}
+        if v.get("wantDesc", True):
+            try:
+                body["description"] = yt_description(v["url"])
+            except Exception as e:
+                print(f"youtube: description {v['id']}: {e}", file=sys.stderr)
+        if v.get("wantSub", True) and sub_ok:
+            p = subprocess.run([AGENT_REACH, "youtube", "subtitle", v["url"]], capture_output=True, text=True, timeout=240)
+            try:
+                d = json.loads(p.stdout)
+                if d.get("ok"):
+                    body["text"] = "\n".join((it.get("text") or "") for it in d.get("items", [])).strip() or None
+                elif (d.get("error") or {}).get("code") in STOP_CODES:
+                    sub_ok = False  # Agent-Reach is pausing YouTube: use yt-dlp directly
+                else:
+                    body["text"] = ""  # no subtitles for this video
+            except ValueError:
+                pass
+        if v.get("wantSub", True) and "text" not in body:
+            try:
+                t = yt_dlp_subs(v["url"])
+                if t is not None:
+                    body["text"] = t
+            except Exception as e:
+                print(f"youtube: yt-dlp {v['id']}: {e}", file=sys.stderr)
+        api(server, token, "/v1/yt/transcript", body)
     return len(pending)
 
 
 def main():
     force = "--force" in sys.argv
     server, token = conf()
+    # YouTube first: an X login / rate-limit stop must not block summaries and explanations.
+    try:
+        n = yt_transcripts(server, token)
+        if n:
+            print(f"youtube: helped with {n} video(s)")
+    except Exception as e:
+        print(f"youtube: {e}", file=sys.stderr)
     cfg = api(server, token, "/v1/x/config")
     st = load_state()
     now = time.time()
@@ -141,13 +199,6 @@ def main():
         if payload["cricket"] or payload["feed"]:
             api(server, token, "/v1/x/ingest", payload)
         return 2
-
-    try:
-        n = yt_transcripts(server, token)
-        if n:
-            print(f"youtube: {n} transcript(s) checked")
-    except Exception as e:  # never let YouTube break the X run
-        print(f"youtube: {e}", file=sys.stderr)
 
     st.pop("error", None)
     save_state(st)

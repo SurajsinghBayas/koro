@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from '../components/Icon.svelte';
   import { native } from '../lib/native.ts';
-  import { addWater, app, focusToday, loadApps, savePrefs, scheduleWater, toast, undoWater, waterToday, waterWeek } from '../lib/store.svelte.ts';
+  import { addWater, app, focusToday, loadApps, savePrefs, scheduleWater, setAppLimit, toast, undoWater, waterToday, waterWeek } from '../lib/store.svelte.ts';
 
   $effect(() => { void loadApps(); });
 
@@ -13,9 +13,10 @@
   const weekMax = $derived(Math.max(goal, ...week.map((d) => d.ml)));
   const R = 54, C = 2 * Math.PI * R;
 
-  const xMin = $derived(app.screenTime);
-  const xOver = $derived(xMin !== null && xMin > app.prefs.xLimit);
   const apps = $derived(app.apps?.apps ?? []);
+  let editing = $state<string | null>(null);
+  const LIMITS = [15, 30, 45, 60, 90, 120];
+  const lim = (pkg: string) => app.prefs.appLimits?.[pkg]?.min ?? 0;
   const appMax = $derived(Math.max(1, ...apps.map((a) => a.min)));
   const fmtMin = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`);
   const focusWeek = $derived(app.focusLog.filter((f) => Date.now() - Date.parse(f.day) < 7 * 864e5).reduce((n, f) => n + f.min, 0));
@@ -65,17 +66,23 @@
 
   <section class="card">
     <div class="card__title"><h3>Screen time today</h3>{#if app.apps}<span class="label">{fmtMin(app.apps.totalMin)}</span>{/if}</div>
-    {#if xMin !== null}
-      <div class="xrow">
-        <div class="row between"><span><b>X</b> limit</span><span class="num" style:color={xOver ? 'var(--danger)' : 'var(--text-2)'}>{xMin} / {app.prefs.xLimit} min</span></div>
-        <div class="meter" class:meter--low={xOver}><span style="--value:{Math.min(1, xMin / app.prefs.xLimit)}"></span></div>
-        <label class="kv"><span class="hint">Daily X limit (min)</span><input class="input small" type="number" min="5" max="600" bind:value={app.prefs.xLimit} onchange={savePrefs} /></label>
-      </div>
-    {/if}
     {#if app.apps}
+      <p class="hint tip">Tap an app to set a daily limit. Koro checks every 15 min and nudges you once when you go over.</p>
       <div class="apps">
         {#each apps as a (a.pkg)}
-          <div class="app-row"><span class="nm">{a.label}</span><i style:width="{(a.min / appMax) * 100}%"></i><span class="num">{fmtMin(a.min)}</span></div>
+          {@const l = lim(a.pkg)}
+          {@const over = l > 0 && a.min >= l}
+          <button class="app-row" class:open={editing === a.pkg} onclick={() => (editing = editing === a.pkg ? null : a.pkg)}>
+            <span class="nm">{a.label}</span>
+            <span class="track"><i style:width="{Math.min(100, (a.min / (l || appMax)) * 100)}%" class:over class:lim={l > 0}></i></span>
+            <span class="num" class:over>{fmtMin(a.min)}{#if l}<span class="of"> / {fmtMin(l)}</span>{/if}</span>
+          </button>
+          {#if editing === a.pkg}
+            <div class="limits">
+              {#each LIMITS as m}<button class:on={l === m} onclick={() => setAppLimit(a.pkg, a.label, m)}>{fmtMin(m)}</button>{/each}
+              <button class:on={!l} onclick={() => setAppLimit(a.pkg, a.label, 0)}>Off</button>
+            </div>
+          {/if}
         {:else}<p class="muted">No app use yet today.</p>{/each}
       </div>
     {:else}
@@ -115,12 +122,22 @@
   .kv { display: flex; justify-content: space-between; align-items: center; gap: var(--s3); }
   .input.small { width: 110px; height: 38px; text-align: center; }
   .hint { font-size: var(--fs-xs); color: var(--text-3); }
-  .xrow { display: flex; flex-direction: column; gap: 8px; margin-bottom: var(--s3); }
-  .apps { display: flex; flex-direction: column; gap: 8px; }
-  .app-row { display: grid; grid-template-columns: 96px 1fr auto; gap: var(--s2); align-items: center; font-size: var(--fs-sm); }
+  .tip { margin: -4px 0 var(--s3); }
+  .apps { display: flex; flex-direction: column; gap: 2px; }
+  .app-row { display: grid; grid-template-columns: minmax(0, 92px) 1fr auto; gap: var(--s3); align-items: center; font-size: var(--fs-sm); text-align: left; padding: 8px 6px; margin: 0 -6px; border-radius: 10px; }
+  .app-row.open { background: var(--surface-2); }
   .app-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .app-row i { height: 8px; border-radius: 4px; background: var(--gold); min-width: 4px; }
-  .app-row .num { color: var(--text-3); font-size: var(--fs-xs); }
+  .track { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+  .app-row.open .track { background: var(--surface-3); }
+  .track i { display: block; height: 100%; border-radius: 4px; background: var(--gold); min-width: 4px; }
+  .track i.lim { background: var(--accent); }
+  .track i.over { background: var(--danger); }
+  .app-row .num { color: var(--text-2); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .app-row .num.over { color: var(--danger); font-weight: 650; }
+  .of { color: var(--text-3); }
+  .limits { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; padding: 4px 0 10px; }
+  .limits button { height: 32px; border-radius: 8px; font-size: 11px; font-weight: 650; color: var(--text-2); background: var(--surface-2); }
+  .limits button.on { background: var(--accent); color: var(--accent-ink); }
   .stats { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
   .stats div { display: flex; flex-direction: column; gap: 2px; }
   .stats b { font-size: 1.4rem; }

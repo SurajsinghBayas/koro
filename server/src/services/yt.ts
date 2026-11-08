@@ -1,7 +1,7 @@
 import type { Db } from '../db.ts';
 import { aiEnabled } from '../env.ts';
 import { loadSnapshot, saveSnapshot } from '../lib/snapshot.ts';
-import { chatJson } from './ai.ts';
+import { chat, chatJson } from './ai.ts';
 
 /**
  * YouTube: new videos from the channels you add (read from each channel's public Videos page, no key) with an AI summary of each.
@@ -12,11 +12,15 @@ export type Channel = { id: string; title: string; handle?: string };
 export type Video = {
   id: string; channelId: string; channel: string; title: string; publishedAt: string; thumb: string; desc: string;
   summary?: string[]; from?: 'transcript' | 'description'; tries?: number; transcript?: 'none' | 'got' | 'missing';
+  transcriptText?: string; subTries?: number;
+  explain?: { md: string; at: string; from: 'transcript' | 'description' }; explainAsked?: number;
 };
 type YtState = { channels: Channel[]; videos: Video[]; at: string | null };
 const st = loadSnapshot<YtState>('yt', { channels: [], videos: [], at: null });
 const save = () => saveSnapshot('yt', st);
-export const getYt = () => ({ channels: st.channels, videos: st.videos.slice(0, 40), at: st.at });
+/** Feed for the app: long fields (transcript, full explanation) stay on the server. */
+export const getYt = () => ({ channels: st.channels, at: st.at,
+  videos: st.videos.slice(0, 40).map(({ transcriptText, explain, desc, ...v }) => ({ ...v, hasExplain: !!explain })) });
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36';
 const KEEP = 14 * 86_400_000;
@@ -121,7 +125,7 @@ export async function refreshYt() {
     for (const v of st.videos.slice(0, 20)) {
       if (v.summary || !(v.transcript === 'missing' || Date.now() - Date.parse(v.publishedAt) > 3 * 3_600_000)) continue;
       if (!v.desc) v.desc = await description(v.id).catch(() => '');
-      if (v.desc.length > 160) await summarize(v, v.desc, 'description');
+      if (v.desc.length > 80) await summarize(v, v.desc, 'description');
     }
   } finally { refreshing = false; }
 }
@@ -138,21 +142,86 @@ async function summarize(v: Video, text: string, from: 'transcript' | 'descripti
   } catch (e) { console.warn('[yt] summary failed:', (e as Error).message); }
 }
 
-/** Videos the Mac should fetch transcripts for. */
+/**
+ * Videos the Mac should help with. YouTube shows cloud servers a "confirm you're not a bot" page, so the Mac
+ * sends the description (a plain page read from a home connection) and, for fresh videos, the transcript.
+ */
 export const pendingTranscripts = () =>
-  st.videos.filter((v) => v.transcript === 'none' && (v.tries ?? 0) < 3 && Date.now() - Date.parse(v.publishedAt) < 3 * 86_400_000)
-    .slice(0, 4).map((v) => ({ id: v.id, url: `https://www.youtube.com/watch?v=${v.id}` }));
+  [...st.videos.filter(explainWaiting), ...st.videos.filter((v) => !v.summary && (v.tries ?? 0) < 4 && Date.now() - Date.parse(v.publishedAt) < 14 * 86_400_000)]
+    .filter((v, i, all) => all.indexOf(v) === i)
+    .slice(0, 6).map((v) => ({
+      id: v.id, url: `https://www.youtube.com/watch?v=${v.id}`,
+      wantSub: explainWaiting(v) || (v.transcript === 'none' && Date.now() - Date.parse(v.publishedAt) < 3 * 86_400_000),
+      wantDesc: !v.desc,
+    }));
+const explainWaiting = (v: Video) => !!v.explainAsked && !v.explain && v.transcript !== 'got' && (v.subTries ?? 0) < 3;
 
-export async function putTranscript(id: string, text: string | null) {
+export async function putTranscript(id: string, text: string | null, desc?: string | null) {
   const v = st.videos.find((x) => x.id === id);
   if (!v) return false;
   v.tries = (v.tries ?? 0) + 1;
-  if (text && text.trim().length > 200) { v.transcript = 'got'; save(); await summarize(v, text, 'transcript'); }
-  else { if (v.tries >= 3 || text !== null) v.transcript = 'missing'; save(); }
+  if (text !== null && text !== undefined) v.subTries = (v.subTries ?? 0) + 1;
+  if (desc && desc.trim() && !v.desc) v.desc = desc.slice(0, 4000);
+  if (text && text.trim().length > 200) { v.transcript = 'got'; v.transcriptText = text.slice(0, 120_000); save(); await summarize(v, text, 'transcript'); }
+  else if (text !== null && text !== undefined) v.transcript = 'missing';
+  if (v.explainAsked && !v.explain && (v.transcript === 'got' || explainGiveUp(v))) void makeExplain(v);
+  if (!v.summary && v.desc && v.desc.length > 80) await summarize(v, v.desc, 'description');
+  save();
   return true;
 }
 
 export function startYt(_db: Db) {
   setTimeout(() => void refreshYt(), 30_000);
   setInterval(() => void refreshYt(), 30 * 60_000);
+}
+
+// ---------- full explanation (on request) ----------
+/** Wait up to 8 min for the Mac to send the transcript, then explain from the description. */
+const explainGiveUp = (v: Video) => v.transcript === 'missing' || (v.subTries ?? 0) >= 3 || Date.now() - (v.explainAsked ?? 0) > 8 * 60_000;
+const making = new Set<string>();
+
+async function makeExplain(v: Video) {
+  if (making.has(v.id) || v.explain || !aiEnabled()) return;
+  const from: 'transcript' | 'description' = v.transcriptText ? 'transcript' : 'description';
+  const text = v.transcriptText ?? v.desc;
+  if (!text || text.length < 80) return;
+  making.add(v.id);
+  try {
+    const md = await chat([
+      { role: 'system', content: `You turn a YouTube video into a complete written explanation, so someone can understand everything without watching it. Write Markdown with these sections:
+# <video title>
+**Channel:** … · **Source:** ${from === 'transcript' ? 'full transcript' : 'video description only (no transcript available)'}
+## TL;DR
+## Key points
+## Full explanation
+## Notable quotes & numbers
+## Terms explained
+## Takeaways
+Section guide (do NOT copy these notes into the headings): TL;DR is 2–3 sentences. Key points is 5–10 bullets. Full explanation walks through the video in order with ### sub-headings for each part, explaining every idea, argument, example, number and step in plain language and defining jargon the first time; it is the longest section. Quotes/numbers and Terms are bullets (drop the section if there are none). Takeaways is what to remember or do.
+Ignore sponsor reads, merch and "like and subscribe". Use ONLY what is in the text; never invent facts.${from === 'description' ? ' You only have the description, so keep it proportionate and say so.' : ''}` },
+      { role: 'user', content: `Title: ${v.title}\nChannel: ${v.channel}\n\n${text.slice(0, 60_000)}` },
+    ], 6000, 180_000);
+    if (md.trim()) { v.explain = { md: tidyHeadings(md.trim()), at: new Date().toISOString(), from }; save(); }
+  } catch (e) { console.warn('[yt] explain failed:', (e as Error).message); }
+  finally { making.delete(v.id); }
+}
+
+/** Drop any section-guide text the model copied into a heading ("## TL;DR — 2–3 sentences."). */
+export function tidyHeadings(md: string) {
+  return md.replace(/^(##\s+(?:TL;DR|Key points|Full explanation|Notable quotes & numbers|Terms explained|Takeaways))(?:\s+[—–-]\s.*|\.)$/gm, '$1');
+}
+
+/** Ask for (or poll) the full explanation of a video. */
+export async function explainVideo(id: string) {
+  const v = st.videos.find((x) => x.id === id);
+  if (!v) return { status: 'missing' as const };
+  if (v.explain) return { status: 'ready' as const, title: v.title, channel: v.channel, ...v.explain, md: tidyHeadings(v.explain.md) };
+  if (!aiEnabled()) return { status: 'failed' as const, error: 'AI is off on the server' };
+  if (!v.explainAsked) { v.explainAsked = Date.now(); save(); }
+  if (v.transcript === 'got' || explainGiveUp(v)) {
+    if (!v.transcriptText && !v.desc) v.desc = await description(v.id).catch(() => '');
+    if (!v.transcriptText && (!v.desc || v.desc.length < 80)) return { status: 'failed' as const, error: "No transcript or description for this video yet. Your Mac will try again; check back in a few minutes." };
+    void makeExplain(v);
+  }
+  return { status: 'pending' as const, waiting: v.transcript === 'got' || explainGiveUp(v) ? 'writing' : 'transcript' };
 }

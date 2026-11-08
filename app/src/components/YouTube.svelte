@@ -1,7 +1,8 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
+  import ExplainSheet from './ExplainSheet.svelte';
   import { openUrl } from '../lib/open.ts';
-  import { addYtChannel, app, loadYt, removeYtChannel, toast } from '../lib/store.svelte.ts';
+  import { addYtChannel, app, loadYt, removeYtChannel, toast, type YtVideo } from '../lib/store.svelte.ts';
   import { ago } from '../lib/util.ts';
 
   /** New videos from followed channels, each with an AI summary. */
@@ -10,6 +11,7 @@
   let busy = $state(false);
   let manage = $state(false);
   let expanded = $state<Record<string, boolean>>({});
+  let reading = $state<YtVideo | null>(null);
   const yt = $derived(app.yt);
 
   async function add(e: SubmitEvent) {
@@ -59,11 +61,14 @@
       {:else}
         <span class="meta pend">Summary on the way…</span>
       {/if}
+      <button class="explain" onclick={() => (reading = v)}><Icon name="lyrics" size={16} /> {v.hasExplain ? 'Read full explanation' : 'Full explanation'} <span>PDF · Markdown</span></button>
     </div>
   </article>
 {:else}
   {#if yt?.channels.length}<p class="muted">No new videos in the last two weeks.</p>{/if}
 {/each}
+
+{#if reading}<ExplainSheet v={reading} onClose={() => (reading = null)} />{/if}
 
 <style>
   .linkish { background: none; color: var(--accent-text); }
@@ -84,5 +89,8 @@
   .pend { color: var(--gold-text); }
   ul { margin: 2px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: var(--fs-sm); line-height: 1.45; color: var(--text-2); }
   ul.clip li:nth-child(n + 3) { display: none; }
+  .explain { margin-top: 6px; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: 12px; font-weight: 650; font-size: var(--fs-sm);
+             color: var(--text); background: linear-gradient(135deg, rgba(94,200,255,.16), rgba(195,139,255,.14) 50%, rgba(242,193,78,.14)); box-shadow: inset 0 0 0 1px var(--line); }
+  .explain span { margin-left: auto; font-size: 11px; color: var(--text-3); font-weight: 600; }
   .ai { display: inline-flex; gap: 4px; align-items: center; color: var(--gold-text); }
 </style>

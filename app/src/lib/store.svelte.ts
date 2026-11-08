@@ -54,20 +54,22 @@ export type Weather = {
   today: { max: number; min: number; rainChance: number; sunrise: string; sunset: string; uv: number };
   hours: { at: string; temp: number; code: number; rain: number }[]; aqi: number | null; rainSoon: string | null; at: string;
 };
-export type YtVideo = { id: string; channelId: string; channel: string; title: string; publishedAt: string; thumb: string; summary?: string[]; from?: 'transcript' | 'description' };
+export type YtVideo = { id: string; channelId: string; channel: string; title: string; publishedAt: string; thumb: string; summary?: string[]; from?: 'transcript' | 'description'; hasExplain?: boolean };
+export type Explain = { status: 'ready' | 'pending' | 'failed' | 'missing'; md?: string; at?: string; from?: 'transcript' | 'description'; title?: string; channel?: string; waiting?: 'transcript' | 'writing'; error?: string };
 export type YtData = { channels: { id: string; title: string; handle?: string }[]; videos: YtVideo[]; at: string | null };
-export type MacState = { online: boolean; volume: number | null; muted: boolean | null };
+export type MacState = { online: boolean; volume: number | null; muted: boolean | null; brightness?: number | null; awake?: boolean;
+  media?: { title: string; artist: string; app: string; url?: string; playing: boolean } | null };
 export type Tab = 'home' | 'matches' | 'news' | 'well' | 'lists' | 'settings';
 type Cfg = { server: string; token: string; deviceId: string; name: string };
 type Prefs = { theme: 'auto' | 'light' | 'dark'; xLimit: number; xPackage: string; focusMin: number; sleepMin: number;
-  waterGoal: number; waterGlass: number; waterRemind: boolean; waterStart: string; waterEnd: string; waterEvery: number };
+  appLimits: Record<string, { min: number; label: string }>; waterGoal: number; waterGlass: number; waterRemind: boolean; waterStart: string; waterEnd: string; waterEvery: number };
 
 // ---------- state ----------
 export const app = $state({
   ready: false,
   cfg: { server: '', token: '', deviceId: '', name: '' } as Cfg,
   prefs: { theme: 'auto', xLimit: 30, xPackage: 'com.twitter.android', focusMin: 25, sleepMin: 30,
-    waterGoal: 2500, waterGlass: 250, waterRemind: false, waterStart: '09:00', waterEnd: '21:00', waterEvery: 2 } as Prefs,
+    appLimits: {} as Record<string, { min: number; label: string }>, waterGoal: 2500, waterGlass: 250, waterRemind: false, waterStart: '09:00', waterEnd: '21:00', waterEvery: 2 } as Prefs,
   tab: 'home' as Tab,
   desk: false,
   tasks: [] as Task[],
@@ -127,6 +129,9 @@ export async function init() {
   app.focusLog = await kvGet('focusLog', []);
   applyTheme();
   if (app.cfg.server && app.cfg.token) void native.setAuth(app.cfg.server, app.cfg.token);
+  if (!app.prefs.appLimits) app.prefs.appLimits = {};
+  if (!Object.keys(app.prefs.appLimits).length && app.prefs.xLimit) { app.prefs.appLimits = { [app.prefs.xPackage]: { min: app.prefs.xLimit, label: 'X' } }; void savePrefs(); }
+  void native.setLimits(app.prefs.appLimits);
   rollRepeatingReminders();
   app.ready = true;
   void refreshAll();
@@ -344,19 +349,37 @@ export async function loadCalendar(ask = false) {
   app.eventsAllowed = r.granted;
   app.events = r.events;
 }
-export async function loadApps() { const r = await native.screenTimeTop(6); app.apps = r.granted ? { apps: r.apps, totalMin: r.totalMin } : null; }
+export async function loadApps() {
+  const r = await native.screenTimeTop(12);
+  if (!r.granted) { app.apps = null; return; }
+  // apps with a limit always show, even if they're not in today's top list
+  const extra = Object.keys(app.prefs.appLimits).filter((p) => !r.apps.some((a) => a.pkg === p));
+  const used = extra.length ? await native.screenTime(extra) : {};
+  const apps = [...r.apps, ...extra.map((pkg) => ({ pkg, label: app.prefs.appLimits[pkg]!.label, min: used[pkg] ?? 0 }))];
+  app.apps = { apps, totalMin: r.totalMin };
+}
+/** Daily limit for any app (0 = none). Enforced natively every 15 min, even when Koro is closed. */
+export async function setAppLimit(pkg: string, label: string, min: number) {
+  const next = { ...app.prefs.appLimits };
+  if (min > 0) next[pkg] = { min, label }; else delete next[pkg];
+  app.prefs.appLimits = next;
+  if (pkg === app.prefs.xPackage && min > 0) app.prefs.xLimit = min;
+  await savePrefs();
+  await native.setLimits(next);
+  toast(min > 0 ? `${label}: ${min} min a day` : `${label}: no limit`);
+}
 
 // ---------- Mac ----------
 export async function loadMac() {
   if (!paired()) return;
   try { const r = await request<MacState>(app.cfg.server, '/v1/mac/status', { token: app.cfg.token }); if (r.data) app.mac = r.data; } catch { /* offline */ }
 }
-export async function macSend(body: { type: 'clip'; text: string } | { type: 'link'; url: string; title?: string } | { type: 'cmd'; cmd: string; value?: number }) {
+export async function macSend(body: { type: 'clip'; text: string } | { type: 'link'; url: string; title?: string } | { type: 'cmd'; cmd: string; value?: number; app?: string }) {
   native.vibrate(8);
   try {
     const { data } = await request<{ ok: boolean; online: boolean }>(app.cfg.server, '/v1/mac/send', { token: app.cfg.token, body });
     if (data && !data.online) toast('Your Mac looks offline. It will get this when it wakes (within a minute).');
-    if (body.type === 'cmd' && body.cmd.startsWith('vol') || (body.type === 'cmd' && (body.cmd === 'volume' || body.cmd === 'mute'))) setTimeout(loadMac, 1200);
+    if (body.type === 'cmd' && /^(vol|bright|mute|awake)/.test(body.cmd)) setTimeout(loadMac, 1200);
     return true;
   } catch (e) { toast((e as Error).message); return false; }
 }
@@ -377,6 +400,15 @@ export async function addYtChannel(input: string) {
   setTimeout(loadYt, 8000);
   await loadYt();
 }
+/** Full written explanation of a video. Ready ones are kept on the phone for offline reading. */
+export async function explainVideo(id: string, ask = false): Promise<Explain> {
+  const cached = await kvGet<Explain | null>(`explain:${id}`, null);
+  if (cached?.md) return cached;
+  const { data } = await request<Explain>(app.cfg.server, `/v1/yt/${id}/explain`, { token: app.cfg.token, method: ask ? 'POST' : 'GET', ...(ask ? { body: {} } : {}), timeoutMs: 20_000 });
+  if (data?.status === 'ready') await kvSet(`explain:${id}`, data);
+  return data ?? { status: 'failed', error: 'No response' };
+}
+
 export async function removeYtChannel(id: string) {
   await request(app.cfg.server, `/v1/yt/channels/${id}`, { token: app.cfg.token, method: 'DELETE' });
   await loadYt();

@@ -39,6 +39,10 @@
     queue: 'M3 5h12v2H3zm0 4h12v2H3zm0 4h8v2H3zm13 0h2v5h-1v1h-3v-1h-1v-2h1v-1h2zm0-4h5v2h-5z',
     lyrics: 'M4 4h16v12h-9v2H9v2H7v-4H4zm2 2v8h12V6zm2 2h8v2H8zm0 3h5v2H8z',
     search: 'M9 3h5v2h2v2h1v5h-1v2h-2v1h2v2h2v2h2v2h-2v-2h-2v-2h-2v-2H9v-1H7v-2H6V7h1V5h2zm0 2v2H8v5h1v1h5v-1h1V7h-1V5z',
+    shuffle: 'M3 6h4v2h2v2H7V8H3zm12 0h3V4h2v2h1v2h-1v2h-2V8h-3v2h-2v2h-2v-2h2V8h2zM3 16h4v-2h2v2H7v2H3zm8-2h2v2h2v2h3v-2h2v2h1v2h-1v2h-2v-2h-3v-2h-2v-2h-2z',
+    repeat: 'M5 7h11V5h2v2h2v2h-2v2h-2V9H7v4H5zm14 4h0v6H8v2H6v-2H4v-2h2v-2h2v2h9v-4z',
+    thumbdown: 'M4 4h11v10h-2v2h-1v3h-1v1H9v-2h1v-4H4v-2H3V7h1zm13 0h4v10h-4z',
+    chevdown: 'M5 8h2v2h2v2h2v2h2v-2h2v-2h2V8h2v2h-2v2h-2v2h-2v2h-2v-2H9v-2H7v-2H5z',
     sparkle: 'M11 2h2v5h2v2h5v2h-5v2h-2v5h-2v-5H9v-2H4V9h5V7h2z',
   };
   let { name, size = 20 }: { name: keyof typeof P | string; size?: number } = $props();

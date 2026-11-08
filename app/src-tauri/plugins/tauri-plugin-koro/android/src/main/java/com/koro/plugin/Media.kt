@@ -25,9 +25,16 @@ object Media {
 
     private fun isPlaying(mc: MediaController) = mc.playbackState?.state.let { it == PlaybackState.STATE_PLAYING || it == PlaybackState.STATE_BUFFERING }
 
+    /** Playing first; else the most recently paused; stopped sessions (e.g. YouTube left open) last. */
     fun current(c: Context): MediaController? {
         val list = controllers(c).filter { it.metadata != null }
-        return list.firstOrNull { isPlaying(it) } ?: list.firstOrNull()
+        fun rank(mc: MediaController) = when (mc.playbackState?.state) {
+            PlaybackState.STATE_PLAYING, PlaybackState.STATE_BUFFERING -> 3
+            PlaybackState.STATE_PAUSED -> 2
+            PlaybackState.STATE_STOPPED, PlaybackState.STATE_NONE, null -> 0
+            else -> 1
+        }
+        return list.maxWithOrNull(compareBy<MediaController>({ rank(it) }, { it.playbackState?.lastPositionUpdateTime ?: 0L }))
     }
 
     fun artBitmap(md: MediaMetadata): Bitmap? = md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
@@ -105,7 +112,7 @@ object Media {
         }
         // Voice-search intent: YT Music / YouTube handle it and start playing the best match.
         val i = android.content.Intent(android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).apply {
-            setPackage(pkg); putExtra(android.app.SearchManager.QUERY, query); addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            setPackage(pkg); putExtra(android.app.SearchManager.QUERY, query); putExtra(android.provider.MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*"); addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         return try { c.startActivity(i); true } catch (_: Exception) {
             val web = if (pkg.contains("music")) "https://music.youtube.com/search?q=" else "https://www.youtube.com/results?search_query="

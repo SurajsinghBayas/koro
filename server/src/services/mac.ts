@@ -9,17 +9,24 @@ import { notify } from './push.ts';
 export type MacEvent =
   | { seq: number; at: number; type: 'clip'; text: string }
   | { seq: number; at: number; type: 'link'; url: string; title?: string }
-  | { seq: number; at: number; type: 'cmd'; cmd: MacCmd; value?: number };
-export const MAC_CMDS = ['lock', 'sleep', 'toggle', 'next', 'prev', 'volume', 'volup', 'voldown', 'mute', 'battery'] as const;
+  | { seq: number; at: number; type: 'cmd'; cmd: MacCmd; value?: number; app?: string };
+export const MAC_CMDS = ['lock', 'sleep', 'toggle', 'next', 'prev', 'volume', 'volup', 'voldown', 'mute', 'battery',
+  'brightness', 'brightup', 'brightdown', 'displayoff', 'awake', 'ring', 'openapp', 'workmode'] as const;
 export type MacCmd = (typeof MAC_CMDS)[number];
-type NewEvent = { type: 'clip'; text: string } | { type: 'link'; url: string; title?: string } | { type: 'cmd'; cmd: MacCmd; value?: number };
+type NewEvent = { type: 'clip'; text: string } | { type: 'link'; url: string; title?: string } | { type: 'cmd'; cmd: MacCmd; value?: number; app?: string };
 
 let seq = Date.now(); // survives restarts monotonically (agent keeps its last seq)
 let events: MacEvent[] = [];
 const waiters = new Set<(e: MacEvent[]) => void>();
 const TTL = { clip: 10 * 60_000, link: 10 * 60_000, cmd: 60_000 };
 
-export const status = { lastPoll: 0, volume: null as number | null, muted: null as boolean | null, at: 0 };
+export const status = { lastPoll: 0, volume: null as number | null, muted: null as boolean | null, brightness: null as number | null, awake: false, at: 0 };
+
+/** What's playing on the Mac (the agent reports changes + a heartbeat every minute). */
+export const macMedia = { title: '', artist: '', app: '', url: '', playing: false, at: 0 };
+export function macMediaNow() {
+  return macMedia.title && Date.now() - macMedia.at < 3 * 60_000 && macOnline() ? { ...macMedia } : null;
+}
 
 function prune(now = Date.now()) { events = events.filter((e) => now - e.at < TTL[e.type]).slice(-50); }
 
@@ -57,4 +64,14 @@ export async function clipToPhone(db: Db, text: string) {
     kind: 'clip' as any, title: url ? 'Link from your Mac' : 'Copied from your Mac', body: t.slice(0, 160), tag: 'clip',
     data: { text: t.slice(0, 2500), url }, // FCM data is capped at 4 KB
   }, { inbox: false });
+}
+
+// ---------- Mac → phone (menu bar remote) ----------
+export const PHONE_CMDS = ['toggle', 'next', 'prev', 'volup', 'voldown', 'ring', 'link'] as const;
+export type PhoneCmd = (typeof PHONE_CMDS)[number];
+/** What the phone last reported (media session changes are posted by its notification listener). */
+export const phone = { title: '', artist: '', app: '', playing: false, at: 0 };
+
+export function cmdToPhone(db: Db, cmd: PhoneCmd, url = '') {
+  return notify(db, { kind: 'cmd' as any, title: '', body: '', tag: `cmd-${cmd}`, data: { cmd, url } }, { inbox: false });
 }

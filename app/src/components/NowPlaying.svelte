@@ -76,19 +76,24 @@
   </button>
 {:else if m?.active && m.title}
   {#if compact}
-    <div class="mini" style:--tint={tint || 'var(--accent)'}>
-      {#if m.art}<img src={m.art} alt="" />{:else}<div class="ph"><Icon name="music" /></div>{/if}
-      <div class="mini__text">
+    <section role="group" aria-label="Now playing" class="holo holo--mini" class:is-active={active} bind:this={card} style:--tint={tint || 'var(--sky-500)'}
+      onpointermove={move} onpointerleave={leave} onpointerup={leave} onpointercancel={leave}>
+      <button class="m-art" onclick={(e) => { e.stopPropagation(); sheet = 'lyrics'; }} aria-label="Open player">
+        {#if m.art}<img src={m.art} alt="" />{:else}<div class="ph"><Icon name="music" /></div>{/if}
+        {#if m.playing}<span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>{/if}
+      </button>
+      <div class="m-text">
+        <span class="label">{m.app}</span>
         <b>{m.title}</b>
-        <span>{m.artist}{m.app ? ` · ${m.app}` : ''}</span>
+        <span class="sub">{m.artist}</span>
         <i class="bar"><i style="transform: scaleX({pct})"></i></i>
       </div>
-      <button class="ctl ctl--ghost" onclick={(e) => { e.stopPropagation(); mediaControl('prev'); }} aria-label="Previous"><Icon name="prev" size={18} /></button>
-      <button class="ctl" onclick={(e) => { e.stopPropagation(); mediaControl('toggle'); }} aria-label={m.playing ? 'Pause' : 'Play'}>
-        <Icon name={m.playing ? 'pause' : 'play'} />
-      </button>
-      <button class="ctl ctl--ghost" onclick={(e) => { e.stopPropagation(); mediaControl('next'); }} aria-label="Next"><Icon name="next" size={18} /></button>
-    </div>
+      <div class="m-ctl">
+        <button class="ctl ctl--sm" onclick={(e) => { e.stopPropagation(); mediaControl('prev'); }} aria-label="Previous"><Icon name="prev" size={18} /></button>
+        <button class="ctl ctl--main ctl--mid" onclick={(e) => { e.stopPropagation(); mediaControl('toggle'); }} aria-label={m.playing ? 'Pause' : 'Play'}><Icon name={m.playing ? 'pause' : 'play'} size={22} /></button>
+        <button class="ctl ctl--sm" onclick={(e) => { e.stopPropagation(); mediaControl('next'); }} aria-label="Next"><Icon name="next" size={18} /></button>
+      </div>
+    </section>
   {:else}
     <section role="group" aria-label="Now playing" class="holo" class:is-active={active} bind:this={card} style:--tint={tint || 'var(--sky-500)'}
       onpointermove={move} onpointerleave={leave} onpointerup={leave} onpointercancel={leave}>
@@ -181,14 +186,18 @@
   .ctl--main { width: 64px; height: 64px; background: var(--gold); color: var(--gold-ink); box-shadow: 0 6px 18px rgba(242,193,78,.35); }
   .ctl:active { transform: scale(.94); }
 
-  /* ---- compact (desk) ---- */
-  .mini { display: grid; grid-template-columns: 56px 1fr auto; gap: var(--s3); align-items: center; padding: 8px;
-          background: color-mix(in oklab, var(--tint) 14%, var(--surface-1)); box-shadow: inset 0 0 0 1px rgba(242,193,78,.45); }
-  .mini img, .mini .ph { width: 56px; height: 56px; object-fit: cover; }
-  .mini__text { min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left; }
-  .mini__text b { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .mini__text span { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .mini .bar { margin-top: 4px; }
-  .mini .ctl { color: var(--text); flex: none; }
-  .mini .ctl--ghost { width: 40px; color: var(--text-2); }
+  /* ---- compact holo (desk mode) ---- */
+  .holo--mini { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 10px 14px 10px 10px; border-radius: 4px; }
+  .holo--mini::after { inset: 4px; }
+  .m-art { position: relative; z-index: 4; width: 76px; height: 76px; overflow: hidden; padding: 0; background: var(--surface-3); }
+  .m-art img, .m-art .ph { width: 100%; height: 100%; object-fit: cover; }
+  .m-art .eq { right: 6px; top: auto; bottom: 6px; height: 12px; }
+  .m-text { position: relative; z-index: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left; }
+  .m-text .label { font-size: 10px; }
+  .m-text b { color: var(--text); font-size: 1.02rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .m-text .sub { font-size: var(--fs-xs); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .m-text .bar { margin-top: 6px; }
+  .m-ctl { position: relative; z-index: 4; display: flex; align-items: center; gap: 2px; }
+  .ctl--sm { width: 40px; height: 40px; }
+  .ctl--mid { width: 52px; height: 52px; }
 </style>

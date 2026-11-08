@@ -29,16 +29,16 @@
 </div>
 
 <style>
-  .tile { display: flex; flex-direction: column; gap: var(--s2); text-align: left; }
+  .tile { display: flex; flex-direction: column; gap: var(--s2); text-align: left; min-width: 0; padding: var(--s3); }
   .tile.is-running { box-shadow: inset 0 0 0 var(--px) var(--accent); }
   .tile.dark { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
   .time { font-size: 1.75rem; line-height: 1; text-align: left; color: var(--text); }
-  .adj { display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 4px; }
-  .adj button { height: 34px; border-radius: 9px; background: var(--surface-2); font-weight: 650; font-size: var(--fs-sm); color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .adj { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr); gap: 4px; }
+  .adj button { min-width: 0; height: 34px; border-radius: 9px; background: var(--surface-2); font-weight: 650; font-size: var(--fs-sm); color: var(--text-2); font-variant-numeric: tabular-nums; }
   .adj .go { background: var(--accent); color: var(--accent-ink, #fff); }
   .is-running .adj .go { background: var(--surface-3); color: var(--text); }
-  .pre { display: flex; gap: 2px; justify-content: space-between; }
-  .pre button { flex: 1; height: 26px; border-radius: 7px; font-size: 11px; font-weight: 600; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .pre { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; }
+  .pre button { min-width: 0; height: 26px; border-radius: 7px; font-size: 11px; font-weight: 600; color: var(--text-3); font-variant-numeric: tabular-nums; }
   .pre button.on { background: var(--surface-2); color: var(--text); }
   .hint { font-size: var(--fs-xs); color: var(--text-3); }
 </style>

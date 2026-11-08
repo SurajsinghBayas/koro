@@ -20,4 +20,15 @@ object Net {
             code to (try { JSONObject(text) } catch (_: Exception) { null })
         } catch (_: Exception) { 0 to null }
     }
+
+    /** Raw bytes (images), with the device token. */
+    fun getBytes(c: Context, path: String, max: Int = 9 * 1024 * 1024): ByteArray? {
+        val (server, token) = Prefs.auth(c) ?: return null
+        return try {
+            val conn = (URL(server.trimEnd('/') + path).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 10_000; readTimeout = 30_000; setRequestProperty("authorization", "Bearer $token")
+            }
+            if (conn.responseCode >= 400 || conn.contentLength > max) null else conn.inputStream.use { it.readBytes() }
+        } catch (_: Exception) { null }
+    }
 }

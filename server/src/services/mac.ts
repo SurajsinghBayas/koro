@@ -9,16 +9,17 @@ import { notify } from './push.ts';
 export type MacEvent =
   | { seq: number; at: number; type: 'clip'; text: string }
   | { seq: number; at: number; type: 'link'; url: string; title?: string }
+  | { seq: number; at: number; type: 'image'; id: string; mime: string }
   | { seq: number; at: number; type: 'cmd'; cmd: MacCmd; value?: number; app?: string };
 export const MAC_CMDS = ['lock', 'sleep', 'toggle', 'next', 'prev', 'volume', 'volup', 'voldown', 'mute', 'battery',
   'brightness', 'brightup', 'brightdown', 'displayoff', 'awake', 'ring', 'openapp', 'workmode'] as const;
 export type MacCmd = (typeof MAC_CMDS)[number];
-type NewEvent = { type: 'clip'; text: string } | { type: 'link'; url: string; title?: string } | { type: 'cmd'; cmd: MacCmd; value?: number; app?: string };
+type NewEvent = { type: 'clip'; text: string } | { type: 'link'; url: string; title?: string } | { type: 'image'; id: string; mime: string } | { type: 'cmd'; cmd: MacCmd; value?: number; app?: string };
 
 let seq = Date.now(); // survives restarts monotonically (agent keeps its last seq)
 let events: MacEvent[] = [];
 const waiters = new Set<(e: MacEvent[]) => void>();
-const TTL = { clip: 10 * 60_000, link: 10 * 60_000, cmd: 60_000 };
+const TTL = { clip: 10 * 60_000, link: 10 * 60_000, image: 10 * 60_000, cmd: 60_000 };
 
 export const status = { lastPoll: 0, volume: null as number | null, muted: null as boolean | null, brightness: null as number | null, awake: false, at: 0 };
 
@@ -82,6 +83,11 @@ export async function clipToPhone(db: Db, text: string) {
     kind: 'clip' as any, title: url ? 'Link from your Mac' : 'Copied from your Mac', body: t.slice(0, 160), tag: 'clip',
     data: { text: t.slice(0, 2500), url }, // FCM data is capped at 4 KB
   }, { inbox: false });
+}
+
+/** An image copied on the Mac: the phone downloads it and puts it on its clipboard. */
+export async function clipImageToPhone(db: Db, id: string, mime: string) {
+  return notify(db, { kind: 'clipimg' as any, title: 'Image copied from your Mac', body: 'Long-press any text box to paste it', tag: 'clipimg', data: { id, mime } }, { inbox: false });
 }
 
 // ---------- Mac → phone (menu bar remote) ----------

@@ -57,6 +57,21 @@ func request(_ method: String, _ path: String, body: [String: Any]? = nil, timeo
     return out
 }
 
+/// Raw bytes (images) from the server.
+func fetchData(_ path: String, timeout: TimeInterval = 30) -> Data? {
+    guard let url = URL(string: server + path) else { return nil }
+    var req = URLRequest(url: url, timeoutInterval: timeout)
+    req.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
+    let sem = DispatchSemaphore(value: 0)
+    var out: Data?
+    URLSession.shared.dataTask(with: req) { data, resp, _ in
+        if let code = (resp as? HTTPURLResponse)?.statusCode, code < 400 { out = data }
+        sem.signal()
+    }.resume()
+    sem.wait()
+    return out
+}
+
 // ---------- helpers ----------
 @discardableResult func osa(_ script: String) -> String? {
     if !Thread.isMainThread { return DispatchQueue.main.sync { osa(script) } } // NSAppleScript is main-thread only
@@ -363,11 +378,51 @@ func checkClipboard() {
     guard clipSyncOn() else { return }
     let types = (pb.types ?? []).map(\.rawValue)
     if types.contains(where: { skipTypes.contains($0) }) { log("skipped a concealed/transient copy"); return }
-    guard let text = pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !text.isEmpty, text.count <= 20_000, text != lastFromPhone else { return }
-    DispatchQueue.global().async {
-        if request("POST", "/v1/clip", body: ["text": text]) != nil { log("clipboard → phone (\(text.count) chars)") }
+    // an image file copied in Finder also carries its name as text: send the picture, not the name
+    let imageFile = (pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL])?.first.map { imageExts.contains($0.pathExtension.lowercased()) } ?? false
+    if !imageFile, let text = pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+        guard text.count <= 20_000, text != lastFromPhone else { return }
+        DispatchQueue.global().async {
+            if request("POST", "/v1/clip", body: ["text": text]) != nil { log("clipboard → phone (\(text.count) chars)") }
+        }
+        return
     }
+    // no text: an image (screenshot to clipboard, "Copy Image" in a browser, or an image file copied in Finder)
+    guard let img = clipboardImage() else { return }
+    DispatchQueue.global().async {
+        guard let (data, mime) = encodeForPhone(img) else { return }
+        if request("POST", "/v1/clip/image", body: ["data": data.base64EncodedString(), "mime": mime], timeout: 60) != nil {
+            log("image → phone (\(data.count / 1024) KB)")
+        }
+    }
+}
+
+let imageExts: Set<String> = ["png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp"]
+func clipboardImage() -> NSImage? {
+    if let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], let f = urls.first {
+        return imageExts.contains(f.pathExtension.lowercased()) ? NSImage(contentsOf: f) : nil // a non-image file: nothing to send
+    }
+    if pb.canReadObject(forClasses: [NSImage.self], options: nil) { return NSImage(pasteboard: pb) }
+    return nil
+}
+/// ≤ 2000 px on the long side; PNG when small (keeps transparency / crisp screenshots), else JPEG 85%.
+func encodeForPhone(_ img: NSImage) -> (Data, String)? {
+    guard var rep = img.representations.compactMap({ $0 as? NSBitmapImageRep }).first ?? img.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)) else { return nil }
+    let w = rep.pixelsWide, h = rep.pixelsHigh, longSide = max(w, h)
+    if longSide > 2000 {
+        let k = 2000.0 / Double(longSide), nw = Int(Double(w) * k), nh = Int(Double(h) * k)
+        guard let r = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: nw, pixelsHigh: nh, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                       isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: r)
+        NSGraphicsContext.current?.imageInterpolation = .high
+        rep.draw(in: NSRect(x: 0, y: 0, width: nw, height: nh))
+        NSGraphicsContext.restoreGraphicsState()
+        rep = r
+    }
+    if let png = rep.representation(using: .png, properties: [:]), png.count <= 1_500_000 { return (png, "image/png") }
+    if let jpg = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.85]), jpg.count <= 8_000_000 { return (jpg, "image/jpeg") }
+    return nil
 }
 
 // ---------- events: phone → Mac ----------
@@ -381,6 +436,14 @@ func handle(_ e: [String: Any]) {
             lastCount = pb.changeCount
         }
         notifyMac("Copied from your phone", text)
+    case "image":
+        guard let id = e["id"] as? String, id.range(of: #"^[0-9a-f-]{36}$"#, options: .regularExpression) != nil,
+              let data = fetchData("/v1/clip/image/\(id)"), let img = NSImage(data: data) else { log("image from phone: download failed"); return }
+        DispatchQueue.main.sync {
+            pb.clearContents(); pb.writeObjects([img])
+            lastCount = pb.changeCount // don't bounce it back to the phone
+        }
+        notifyMac("Image from your phone", "Copied. Paste with ⌘V")
     case "link":
         guard let s = e["url"] as? String, let url = URL(string: s), ["http", "https"].contains(url.scheme ?? "") else { return }
         DispatchQueue.main.sync { _ = NSWorkspace.shared.open(url) }

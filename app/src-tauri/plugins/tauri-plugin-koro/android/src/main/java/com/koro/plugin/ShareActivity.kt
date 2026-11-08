@@ -17,6 +17,22 @@ import java.util.UUID
 class ShareActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // an image (Gallery, screenshot…): straight onto the Mac clipboard
+        if (intent?.type?.startsWith("image/") == true) {
+            @Suppress("DEPRECATION")
+            val uri = intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+            if (uri == null) { finish(); return }
+            if (Prefs.auth(this) == null) { toast("Open Koro and pair it with your server first"); finish(); return }
+            toast("Copying image to your Mac…")
+            Thread {
+                val code = try { ClipImage.sendToMac(this, uri) } catch (_: Exception) { 400 }
+                runOnUiThread {
+                    toast(when (code) { in 200..299 -> "Image copied to your Mac. Paste with ⌘V"; 0 -> "Couldn't reach your Koro server"; else -> "Couldn't send that image ($code)" })
+                    finish()
+                }
+            }.start()
+            return
+        }
         val text = (intent?.getStringExtra(Intent.EXTRA_TEXT) ?: "").trim()
         val subject = intent?.getStringExtra(Intent.EXTRA_SUBJECT)?.trim()?.takeIf { it.isNotEmpty() }
         if (text.isEmpty()) { finish(); return }

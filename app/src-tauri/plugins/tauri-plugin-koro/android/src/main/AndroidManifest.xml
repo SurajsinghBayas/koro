@@ -74,7 +74,20 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
         </activity>
+        <!-- images from the Mac go on the clipboard as content:// URIs other apps can paste -->
+        <provider
+            android:name="com.koro.plugin.KoroClipProvider"
+            android:authorities="${applicationId}.koroclip"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/koro_clip_paths" />
+        </provider>
         <provider
             android:name="com.koro.plugin.KoroInitProvider"
             android:authorities="${applicationId}.koroinit"

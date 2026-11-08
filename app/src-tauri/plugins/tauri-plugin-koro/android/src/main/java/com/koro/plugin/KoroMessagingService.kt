@@ -27,6 +27,8 @@ class KoroMessagingService : FirebaseMessagingService() {
             Notifier.x(this, (tag ?: title).hashCode(), ch, title, body, d["image"]?.let { fetchImage(it) }, d["url"])
         } else if (d["kind"] == "cmd") {
             Remote.handle(this, d["cmd"] ?: "", d["url"])
+        } else if (d["kind"] == "clipimg") {
+            ClipImage.receive(this, d["id"] ?: "", d["mime"] ?: "image/jpeg")
         } else if (d["kind"] == "macmedia") {
             MacMedia.onPush(this, d)
         } else if (d["kind"] == "brief") {

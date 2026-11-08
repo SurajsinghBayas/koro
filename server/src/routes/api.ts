@@ -11,10 +11,11 @@ import { freshenNews, getNews, type NewsCat } from '../services/news.ts';
 import { notify, pushEnabled } from '../services/push.ts';
 import { onXIngest } from '../services/xnotify.ts';
 import { CRICKET_HANDLES, getX, ingest } from '../services/x.ts';
-import { clipToPhone, cmdToPhone, currentSeq, MAC_CMDS, macMediaNow, macOnline, setMacMedia, nextEvents, phone, PHONE_CMDS, pushToMac, status as macStatus } from '../services/mac.ts';
+import { clipImageToPhone, clipToPhone, cmdToPhone, currentSeq, MAC_CMDS, macMediaNow, macOnline, setMacMedia, nextEvents, phone, PHONE_CMDS, pushToMac, status as macStatus } from '../services/mac.ts';
 import { addSaved } from '../services/saved.ts';
 import { getWeather } from '../services/weather.ts';
 import { findPlayable } from '../services/music.ts';
+import { getImage, putImage } from '../services/clipimg.ts';
 import { getLyrics } from '../services/lyrics.ts';
 import { addChannel, explainVideo, getYt, pendingTranscripts, putTranscript, refreshYt, removeChannel } from '../services/yt.ts';
 
@@ -245,6 +246,22 @@ export function apiRoutes(db: Db) {
     const b = z.object({ text: z.string().min(1).max(20_000) }).safeParse(await c.req.json().catch(() => null));
     if (!b.success) return c.json({ error: 'text required' }, 400);
     return c.json(await clipToPhone(db, b.data.text));
+  });
+
+  // Images for the other device's clipboard (base64 JSON; 8 MB max). Mac → phone push, phone → Mac event.
+  r.post('/clip/image', async (c) => {
+    const b = z.object({ data: z.string().min(10).max(12_000_000), mime: z.string().max(40) }).safeParse(await c.req.json().catch(() => null));
+    if (!b.success) return c.json({ error: 'data (base64) and mime required' }, 400);
+    const put = putImage(b.data.data, b.data.mime);
+    if ('error' in put) return c.json(put, 400);
+    if (isMac(c)) await clipImageToPhone(db, put.id, b.data.mime);
+    else pushToMac({ type: 'image', id: put.id, mime: b.data.mime });
+    return c.json({ ok: true, ...put });
+  });
+  r.get('/clip/image/:id', (c) => {
+    const img = getImage(c.req.param('id'));
+    if (!img) return c.json({ error: 'gone (images last 10 minutes)' }, 404);
+    return c.body(img.buf, 200, { 'content-type': img.mime, 'cache-control': 'no-store' });
   });
 
   // ---------- read later ----------

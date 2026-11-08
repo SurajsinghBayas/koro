@@ -695,15 +695,16 @@ const MWell = () => (
 const End = () => {
   const f = useCurrentFrame(), len = L(T.end, 27.5);
   const { fps } = useVideoConfig();
-  const P = phoneSize(760);
+  const P = phoneSize(620);
   const lk = spring({ frame: f - 6, fps, config: { damping: 16 } });
   const sweep = (f * 2.2) % 300;
   return (
     <AbsoluteFill>
       <Atmos tint={GOLD} tint2={VIOLET} />
-      <Camera rx={kf(f, [[0, 26], [len, 12]])} ry={kf(f, [[0, -24], [len, -8]])} z={kf(f, [[0, -620], [len, -380]])} y={kf(f, [[0, 260], [len, 160]])}>
-        <Obj w={0} h={0} x={-90} y={150} z={-120}><Mac3D v={{ name: 's4_volbright.mac', from: 6.6 }} w={980} lean={12} /></Obj>
-        <Obj w={P.w} h={P.h} x={430} y={30} z={280} rx={-4} ry={-18}><Phone3D v={{ name: 's12_holo.phone', from: 5.0 }} h={760} glint={1.4} /></Obj>
+      {/* negative rx = the camera looks down onto the desk (positive would look up at the deck's underside) */}
+      <Camera rx={kf(f, [[0, -16], [len, -7]])} ry={kf(f, [[0, -20], [len, -6]])} z={kf(f, [[0, -800], [len, -600]])} y={kf(f, [[0, 30], [len, -10]])}>
+        <Obj w={0} h={0} x={-70} y={210} z={-160}><Mac3D v={{ name: 's4_volbright.mac', from: 6.6 }} w={820} lean={10} /></Obj>
+        <Obj w={P.w} h={P.h} x={380} y={40} z={540} rx={4} ry={-16} rz={3}><Phone3D v={{ name: 's12_holo.phone', from: 5.0 }} h={620} glint={1.4} /></Obj>
       </Camera>
       <Dust n={40} seed="end" color={GOLD} />
       <AbsoluteFill style={{ alignItems: 'center', paddingTop: 210 }}>
@@ -713,7 +714,7 @@ const End = () => {
         <div style={{ height: 16 }} />
         <Caption text="built with AI · in a weekend" at={s(0.5)} color="#fff" />
       </AbsoluteFill>
-      <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 400, background: 'linear-gradient(0deg, rgba(0,0,0,.75) 0%, rgba(0,0,0,.5) 520px, transparent 760px)' }}>
+      <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 330, background: 'linear-gradient(0deg, rgba(0,0,0,.75) 0%, rgba(0,0,0,.5) 520px, transparent 760px)' }}>
         <Words text={'comment *KORO*'} at={s(0.9)} gap={3} size={92} />
         <div style={{ fontFamily: BODY, fontSize: 30, color: 'rgba(255,255,255,.62)', marginTop: 18, opacity: kf(f, [[s(1.4), 0], [s(1.8), 1]]) }}>and I'll send you the link</div>
       </AbsoluteFill>
@@ -755,7 +756,7 @@ const Timeline = () => (
     <Leak from={s(T.open)} dur={s(1.6)} seed={3} hue={0} opacity={0.45} />
     <Leak from={s(T.drop)} dur={s(1.4)} seed={7} hue={0} opacity={0.7} />
     <Leak from={s(T.m[4])} dur={s(0.8)} seed={5} hue={170} opacity={0.4} />
-    <Leak from={s(T.end)} dur={s(2.2)} seed={9} hue={0} opacity={0.5} />
+    <Leak from={s(T.end)} dur={s(1.4)} seed={9} hue={0} opacity={0.25} />
   </AbsoluteFill>
 );
 

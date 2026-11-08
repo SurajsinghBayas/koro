@@ -258,12 +258,32 @@ func setBrightness(_ pct: Int) {
 
 // ---------- keep awake / ring / open app ----------
 var caffeinate: Process?
+let amphetamine = "com.if.Amphetamine"
+var hasAmphetamine: Bool { NSWorkspace.shared.urlForApplication(withBundleIdentifier: amphetamine) != nil }
+/// Keep awake is an Amphetamine session when Amphetamine is installed (its menu bar shows it, and a session
+/// started there counts too); otherwise a caffeinate process.
+func isAwake() -> Bool {
+    if hasAmphetamine {
+        // asking a closed app would launch it; a closed Amphetamine has no session
+        guard running(amphetamine) else { return false }
+        return osa("tell application id \"\(amphetamine)\" to session is active") == "true"
+    }
+    return caffeinate != nil
+}
 func setAwake(_ on: Bool) {
+    if hasAmphetamine {
+        osa(on ? "tell application id \"\(amphetamine)\" to start new session with options {displaySleepAllowed:false}"
+               : "tell application id \"\(amphetamine)\" to end session")
+        return
+    }
     if on, caffeinate == nil {
         let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate"); p.arguments = ["-dis"]
         try? p.run(); caffeinate = p
     } else if !on { caffeinate?.terminate(); caffeinate = nil }
 }
+/// "Sleep on" = the display sleeps (the Mac keeps running, so the phone can turn it back on); "Sleep off" = wake it.
+func displayAsleep() -> Bool { CGDisplayIsAsleep(CGMainDisplayID()) != 0 }
+func wakeDisplay() { shell("/usr/bin/caffeinate", ["-u", "-t", "2"]) }
 func ringMac() {
     DispatchQueue.main.async {
         notifyMac("Find my Mac", "Your phone is looking for this Mac")
@@ -336,18 +356,18 @@ final class HUD {
 func volumeStatus() -> [String: Any] {
     let v = Int(osa("output volume of (get volume settings)") ?? "") ?? -1
     let m = osa("output muted of (get volume settings)") == "true"
-    return ["volume": v >= 0 ? v : NSNull(), "muted": m, "brightness": brightness() ?? NSNull(), "awake": caffeinate != nil]
+    return ["volume": v >= 0 ? v : NSNull(), "muted": m, "brightness": brightness() ?? NSNull(), "awake": isAwake(), "asleep": displayAsleep()]
 }
 var lastReported = ""
 func reportStatus() {
     let st = volumeStatus()
-    lastReported = "\(st["volume"] ?? "")|\(st["muted"] ?? "")|\(st["brightness"] ?? "")|\(st["awake"] ?? "")"
+    lastReported = "\(st["volume"] ?? "")|\(st["muted"] ?? "")|\(st["brightness"] ?? "")|\(st["awake"] ?? "")|\(st["asleep"] ?? "")"
     _ = request("POST", "/v1/mac/status", body: st)
 }
 /// Volume / brightness changed on the Mac itself (keys, Control Centre) → tell the phone within ~1.5 s.
 func watchLevels() {
     let st = volumeStatus()
-    let key = "\(st["volume"] ?? "")|\(st["muted"] ?? "")|\(st["brightness"] ?? "")|\(st["awake"] ?? "")"
+    let key = "\(st["volume"] ?? "")|\(st["muted"] ?? "")|\(st["brightness"] ?? "")|\(st["awake"] ?? "")|\(st["asleep"] ?? "")"
     if key != lastReported { lastReported = key; _ = request("POST", "/v1/mac/status", body: st) }
 }
 
@@ -463,7 +483,11 @@ func handle(_ e: [String: Any]) {
         case "brightup": setBrightness((brightness() ?? 50) + 6)
         case "brightdown": setBrightness((brightness() ?? 50) - 6)
         case "displayoff": shell("/usr/bin/pmset", ["displaysleepnow"])
-        case "awake": setAwake(caffeinate == nil); notifyMac("Koro", caffeinate != nil ? "Mac will stay awake" : "Normal sleep restored")
+        case "sleeptoggle": if displayAsleep() { wakeDisplay() } else { shell("/usr/bin/pmset", ["displaysleepnow"]) }
+        case "awake":
+            let on = !isAwake(); setAwake(on)
+            notifyMac("Koro", on ? "Keep awake on (Amphetamine session started)" : "Keep awake off (session ended)")
+        case "wake": wakeDisplay()
         case "ring": ringMac()
         case "openapp": if let a = e["app"] as? String { openApp(a) }
         case "workmode": // WhatsApp + Terminal + Gmail in Safari
@@ -480,7 +504,9 @@ func handle(_ e: [String: Any]) {
         } else if cmd.hasPrefix("bright") {
             HUD.show("brightness", Double(brightness() ?? 0) / 100)
             reportStatus()
-        } else if cmd == "awake" { reportStatus() }
+        } else if ["awake", "wake", "sleeptoggle", "displayoff"].contains(cmd) {
+            DispatchQueue.global().asyncAfter(deadline: .now() + 1.2) { reportStatus() }
+        }
     default: break
     }
 }
@@ -540,11 +566,11 @@ final class Menu: NSObject, NSMenuDelegate {
     }
     @objc func run(_ sender: NSMenuItem) { let fn = actions[sender.tag]; DispatchQueue.global().async { fn() } }
     @objc func toggleClip() { setClipSync(!clipSyncOn()) }
-    @objc func toggleAwake() { setAwake(caffeinate == nil); DispatchQueue.global().async { reportStatus() } }
+    @objc func toggleAwake() { DispatchQueue.global().async { setAwake(!isAwake()); reportStatus() } }
 
     func menuWillOpen(_ menu: NSMenu) {
         clip.state = clipSyncOn() ? .on : .off
-        awake.state = caffeinate != nil ? .on : .off
+        awake.state = isAwake() ? .on : .off
         DispatchQueue.global().async { [self] in
             let r = request("GET", "/v1/phone/status", timeout: 6)
             let d = r?["device"] as? [String: Any], m = r?["media"] as? [String: Any]

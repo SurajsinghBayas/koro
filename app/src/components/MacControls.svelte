@@ -73,20 +73,20 @@
 
     <div class="grid">
       <button class="k" onclick={cmd('lock')}><Icon name="lock" /><span>Lock</span></button>
-      <button class="k" onclick={cmd('displayoff')}><Icon name="desk" /><span>Screen off</span></button>
-      <button class="k" class:warn={confirmSleep} onclick={(e) => { if (confirmSleep) { cmd('sleep')(e); confirmSleep = false; } else { confirmSleep = true; setTimeout(() => (confirmSleep = false), 3000); } }}>
-        <Icon name="moon" /><span>{confirmSleep ? 'Tap again' : 'Sleep'}</span>
-      </button>
-      <button class="k" class:active={mac?.awake} onclick={cmd('awake')}><Icon name="bolt" /><span>{mac?.awake ? 'Awake ✓' : 'Keep awake'}</span></button>
+      <button class="k" class:active={mac?.asleep} onclick={cmd('sleeptoggle')}><Icon name="moon" /><span>{mac?.asleep ? 'Sleep: on' : 'Sleep: off'}</span></button>
+      <button class="k" class:active={mac?.awake} onclick={cmd('awake')}><Icon name="bolt" /><span>{mac?.awake ? 'Awake: on' : 'Keep awake'}</span></button>
       <button class="k" onclick={cmd('ring')}><Icon name="music" /><span>Find Mac</span></button>
       <button class="k" onclick={() => sendClipboardToMac()}><Icon name="copy" /><span>Send clip</span></button>
+      <button class="k" class:warn={confirmSleep} onclick={(e) => { if (confirmSleep) { cmd('sleep')(e); confirmSleep = false; } else { confirmSleep = true; setTimeout(() => (confirmSleep = false), 3000); } }}>
+        <Icon name="moon" /><span>{confirmSleep ? 'Tap again' : 'Deep sleep'}</span>
+      </button>
     </div>
 
     <button class="work" onclick={cmd('workmode')}><Icon name="laptop" size={18} /> Work mode <span>WhatsApp · Terminal · Gmail</span></button>
     <div class="label apps-l">Open on Mac</div>
     <div class="apps">{#each APPS as a}<button onclick={cmd('openapp', { app: a })}>{short(a)}</button>{/each}</div>
 
-    {#if mac && !mac.online}<p class="hint">Commands wait up to a minute for the Mac to come online.</p>{/if}
+    {#if mac && !mac.online}<p class="hint">Commands wait up to a minute for the Mac to come online.</p>{:else}<p class="hint">Sleep turns the Mac's screen off and back on. Deep sleep sleeps the whole Mac (wake it from the Mac).</p>{/if}
   </section>
 {/if}
 

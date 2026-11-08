@@ -12,7 +12,7 @@ export type MacEvent =
   | { seq: number; at: number; type: 'image'; id: string; mime: string }
   | { seq: number; at: number; type: 'cmd'; cmd: MacCmd; value?: number; app?: string };
 export const MAC_CMDS = ['lock', 'sleep', 'toggle', 'next', 'prev', 'volume', 'volup', 'voldown', 'mute', 'battery',
-  'brightness', 'brightup', 'brightdown', 'displayoff', 'awake', 'ring', 'openapp', 'workmode'] as const;
+  'brightness', 'brightup', 'brightdown', 'displayoff', 'awake', 'ring', 'openapp', 'workmode', 'wake', 'sleeptoggle'] as const;
 export type MacCmd = (typeof MAC_CMDS)[number];
 type NewEvent = { type: 'clip'; text: string } | { type: 'link'; url: string; title?: string } | { type: 'image'; id: string; mime: string } | { type: 'cmd'; cmd: MacCmd; value?: number; app?: string };
 
@@ -21,7 +21,7 @@ let events: MacEvent[] = [];
 const waiters = new Set<(e: MacEvent[]) => void>();
 const TTL = { clip: 10 * 60_000, link: 10 * 60_000, image: 10 * 60_000, cmd: 60_000 };
 
-export const status = { lastPoll: 0, volume: null as number | null, muted: null as boolean | null, brightness: null as number | null, awake: false, at: 0 };
+export const status = { lastPoll: 0, volume: null as number | null, muted: null as boolean | null, brightness: null as number | null, awake: false, asleep: false, at: 0 };
 
 /** What's playing on the Mac (the agent reports changes + a heartbeat every minute). */
 export const macMedia = { title: '', artist: '', app: '', url: '', art: '', playing: false, at: 0 };

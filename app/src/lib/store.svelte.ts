@@ -58,7 +58,7 @@ export type Weather = {
 export type YtVideo = { id: string; channelId: string; channel: string; title: string; publishedAt: string; thumb: string; summary?: string[]; from?: 'transcript' | 'description'; hasExplain?: boolean };
 export type Explain = { status: 'ready' | 'pending' | 'failed' | 'missing'; md?: string; at?: string; from?: 'transcript' | 'description'; title?: string; channel?: string; waiting?: 'transcript' | 'writing'; error?: string };
 export type YtData = { channels: { id: string; title: string; handle?: string }[]; videos: YtVideo[]; at: string | null };
-export type MacState = { online: boolean; volume: number | null; muted: boolean | null; brightness?: number | null; awake?: boolean;
+export type MacState = { online: boolean; volume: number | null; muted: boolean | null; brightness?: number | null; awake?: boolean; asleep?: boolean;
   media?: { title: string; artist: string; app: string; url?: string; art?: string; playing: boolean } | null };
 export type Tab = 'home' | 'matches' | 'news' | 'well' | 'lists' | 'settings';
 type Cfg = { server: string; token: string; deviceId: string; name: string };

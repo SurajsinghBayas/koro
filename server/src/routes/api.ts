@@ -184,14 +184,15 @@ export function apiRoutes(db: Db) {
   r.post('/mac/status', async (c) => {
     if (!isMac(c)) return c.json({ error: 'Mac only' }, 403);
     const b = z.object({ volume: z.number().min(0).max(100).nullable().optional(), muted: z.boolean().nullable().optional(),
-      brightness: z.number().min(0).max(100).nullable().optional(), awake: z.boolean().optional() }).safeParse(await c.req.json().catch(() => null));
+      brightness: z.number().min(0).max(100).nullable().optional(), awake: z.boolean().optional(), asleep: z.boolean().optional() }).safeParse(await c.req.json().catch(() => null));
     if (!b.success) return c.json({ error: 'volume/muted' }, 400);
     Object.assign(macStatus, { volume: b.data.volume ?? null, muted: b.data.muted ?? null, at: Date.now() });
     if (b.data.brightness !== undefined) macStatus.brightness = b.data.brightness;
     if (b.data.awake !== undefined) macStatus.awake = b.data.awake;
+    if (b.data.asleep !== undefined) macStatus.asleep = b.data.asleep;
     return c.json({ ok: true });
   });
-  r.get('/mac/status', (c) => c.json({ online: macOnline(), media: macMediaNow(), volume: macStatus.volume, muted: macStatus.muted, brightness: macStatus.brightness, awake: macStatus.awake, at: macStatus.at || null }));
+  r.get('/mac/status', (c) => c.json({ online: macOnline(), media: macMediaNow(), volume: macStatus.volume, muted: macStatus.muted, brightness: macStatus.brightness, awake: macStatus.awake, asleep: macStatus.asleep, at: macStatus.at || null }));
 
   r.post('/mac/media', async (c) => {
     if (!isMac(c)) return c.json({ error: 'Mac only' }, 403);

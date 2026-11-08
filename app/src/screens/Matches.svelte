@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import Icon from '../components/Icon.svelte';
   import MatchRow from '../components/MatchRow.svelte';
   import XPostView from '../components/XPost.svelte';
@@ -6,7 +7,8 @@
   import { ago, fmtDay } from '../lib/util.ts';
 
   // Poll only while this screen is visible: every 30 s during a live match, else every 5 min.
-  $effect(() => {
+  // untrack: reading matchesFull here must not re-run the effect each time loadMatches replaces it (an endless reload loop)
+  $effect(() => untrack(() => {
     void loadMatches(); void loadX();
     let t: ReturnType<typeof setTimeout>;
     const loop = () => {
@@ -15,7 +17,7 @@
     };
     loop();
     return () => clearTimeout(t);
-  });
+  }));
 
   type Who = 'all' | 'india' | 'mi';
   let who = $state<Who>('all');

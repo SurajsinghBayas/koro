@@ -10,8 +10,8 @@ import { dayKey } from './util.ts';
 
 export const DEMO = (() => { try { return localStorage.getItem('koro.demo') === '1'; } catch { return false; } })();
 
-/** These still hit the network in demo mode. */
-const LIVE = [/^\/v1\/mac/, /^\/v1\/music/, /^\/v1\/clip/];
+/** These still hit the network in demo mode (lyrics are read-only and hold nothing personal). */
+const LIVE = [/^\/v1\/mac/, /^\/v1\/music/, /^\/v1\/clip/, /^\/v1\/lyrics/];
 
 const at = (h: number, m = 0, dayOffset = 0) => { const d = new Date(); d.setDate(d.getDate() + dayOffset); d.setHours(h, m, 0, 0); return d; };
 const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();

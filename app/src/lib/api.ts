@@ -1,3 +1,5 @@
+import { DEMO, demoResponse } from './demo.ts';
+
 /**
  * HTTP client: the WebView's own fetch on the phone and in the browser. The server sends CORS headers,
  * and the Android build allows cleartext so http:// works for Wi-Fi / USB testing against the Mac.
@@ -12,6 +14,10 @@ export class ApiError extends Error {
 }
 
 export async function request<T>(server: string, path: string, opts: { method?: string; token?: string; body?: unknown; etag?: string; timeoutMs?: number } = {}) {
+  if (DEMO) {
+    const d = demoResponse(path);
+    if (d !== undefined) return { data: d as T, etag: undefined, notModified: false };
+  }
   const f = await getFetch();
   const headers: Record<string, string> = { accept: 'application/json' };
   if (opts.token) headers.authorization = `Bearer ${opts.token}`;

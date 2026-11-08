@@ -3,6 +3,7 @@ import { ApiError, request } from './api.ts';
 import { kvClear, kvGet, kvSet } from './kv.ts';
 import { native, type AppUse, type CalEvent, type NowPlaying } from './native.ts';
 import { wx } from './weather.ts';
+import { DEMO, demoState } from './demo.ts';
 import { dayKey, localNowLabel, nowIso, uuid7 } from './util.ts';
 
 // ---------- types ----------
@@ -133,9 +134,20 @@ export async function init() {
   if (!app.prefs.appLimits) app.prefs.appLimits = {};
   if (!Object.keys(app.prefs.appLimits).length && app.prefs.xLimit) { app.prefs.appLimits = { [app.prefs.xPackage]: { min: app.prefs.xLimit, label: 'X' } }; void savePrefs(); }
   void native.setLimits(app.prefs.appLimits);
-  rollRepeatingReminders();
+  if (DEMO) seedDemo();
+  else rollRepeatingReminders();
   app.ready = true;
   void refreshAll();
+}
+
+/** Recording mode (lib/demo.ts): tidy data on screen, nothing saved, no alarms touched. */
+function seedDemo() {
+  const d = demoState();
+  outbox = [];
+  for (const t of TABLES) (app as any)[t] = (d as any)[t];
+  app.prefs = { ...app.prefs, appLimits: d.appLimits };
+  app.apps = d.apps; app.events = d.events; app.eventsAllowed = true;
+  app.weather = d.weather as Weather; app.home = d.home as unknown as Home; app.matchesFull = d.matchesFull as unknown as MatchesFull;
 }
 
 export async function savePrefs() { await kvSet('prefs', app.prefs); applyTheme(); }
@@ -248,6 +260,7 @@ async function scheduleNative(r: Reminder) {
 }
 /** Tasks with a time and habits with a nudge time get their own exact alarms (ids prefixed so they never clash). */
 function scheduleAlarm(table: TableName, row: Base) {
+  if (DEMO) return;
   if (table === 'reminders') return void scheduleNative(row as Reminder);
   if (table === 'tasks') {
     const t = row as Task;
@@ -272,6 +285,7 @@ function rollRepeatingReminders() {
 }
 /** Re-arm every future alarm (idempotent) — after install, reboot or sync. */
 export async function rescheduleAll() {
+  if (DEMO) return;
   for (const r of upcomingReminders()) await scheduleNative(r);
   for (const t of live(app.tasks)) if (t.due_time && !t.done_at) scheduleAlarm('tasks', t);
   for (const h of live(app.habits)) if (h.remind_time) scheduleAlarm('habits', h);
@@ -296,6 +310,7 @@ const waterTimes = () => {
 };
 /** Daily repeating water nudges (native alarms with a "+1 glass" button). */
 export async function scheduleWater() {
+  if (DEMO) return;
   const prev: string[] = await kvGet('waterAlarms', []);
   for (const id of prev) await native.cancelReminder(id);
   if (!app.prefs.waterRemind) { await kvSet('waterAlarms', []); return; }
@@ -335,6 +350,7 @@ export const blocks = (x: Saved): Block[] => { try { return x.content ? JSON.par
 
 // ---------- weather & calendar ----------
 export async function loadWeather(ask = false) {
+  if (DEMO) return;
   if (!paired()) return;
   let loc = await native.location();
   if (!loc.granted && ask) { await native.requestPermission('location'); await new Promise((r) => setTimeout(r, 2500)); loc = await native.location(); }
@@ -345,12 +361,14 @@ export async function loadWeather(ask = false) {
   } catch { /* keep the last forecast */ }
 }
 export async function loadCalendar(ask = false) {
+  if (DEMO) return;
   let r = await native.calendar(1);
   if (!r.granted && ask) { await native.requestPermission('calendar'); await new Promise((res) => setTimeout(res, 2500)); r = await native.calendar(1); }
   app.eventsAllowed = r.granted;
   app.events = r.events;
 }
 export async function loadApps() {
+  if (DEMO) return;
   const r = await native.screenTimeTop(12);
   if (!r.granted) { app.apps = null; return; }
   // apps with a limit always show, even if they're not in today's top list
@@ -366,7 +384,7 @@ export async function setAppLimit(pkg: string, label: string, min: number) {
   app.prefs.appLimits = next;
   if (pkg === app.prefs.xPackage && min > 0) app.prefs.xLimit = min;
   await savePrefs();
-  await native.setLimits(next);
+  if (!DEMO) await native.setLimits(next);
   toast(min > 0 ? `${label}: ${min} min a day` : `${label}: no limit`);
 }
 
@@ -465,6 +483,7 @@ export async function pushWidgets() {
 }
 /** Ticks made on widgets and "+1 glass" taps on notifications while the app was closed. */
 export async function applyOps() {
+  if (DEMO) return;
   const ops = await native.takeOps();
   for (const op of ops) {
     if (op.kind === 'water') { write('water_logs', { id: uuid7(), day: dayKey(new Date(op.at)), ml: op.ml ?? app.prefs.waterGlass, updated_at: '' } as WaterLog); continue; }
@@ -651,12 +670,14 @@ export async function runPull(tab: Tab) {
 }
 
 export async function reportBattery() {
+  if (DEMO) return;
   const b = await native.battery();
   app.battery = b;
   if (b && paired()) await request(app.cfg.server, '/v1/devices/battery', { token: app.cfg.token, body: b }).catch(() => {});
 }
 
 export async function refreshScreenTime() {
+  if (DEMO) { app.screenTime = 12; return; }
   const m = await native.screenTime([app.prefs.xPackage]);
   app.screenTime = m[app.prefs.xPackage] ?? null;
 }

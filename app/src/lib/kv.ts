@@ -1,3 +1,5 @@
+import { DEMO } from './demo.ts';
+
 /** Tiny IndexedDB key-value store (works in the Android WebView and in a desktop browser). */
 let dbp: Promise<IDBDatabase> | null = null;
 
@@ -25,6 +27,7 @@ export async function kvGet<T>(key: string, fallback: T): Promise<T> {
 }
 
 export async function kvSet(key: string, value: unknown) {
+  if (DEMO) return; // demo mode never saves
   try {
     const db = await open();
     await new Promise<void>((resolve, reject) => {

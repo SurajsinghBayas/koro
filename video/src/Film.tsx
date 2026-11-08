@@ -7,11 +7,11 @@ import type { CSSProperties, ReactNode } from 'react';
 import { AbsoluteFill, Easing, interpolate, OffthreadVideo, spring, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 import { INTRO, OUTRO, SCENE, SCENES, T, type Scene } from './scenes';
 
-const { fontFamily: DISPLAY } = loadDisplay('normal', { weights: ['500', '700'], subsets: ['latin'] });
-const { fontFamily: BODY } = loadBody('normal', { weights: ['400', '500', '600'], subsets: ['latin'] });
+export const { fontFamily: DISPLAY } = loadDisplay('normal', { weights: ['500', '700'], subsets: ['latin'] });
+export const { fontFamily: BODY } = loadBody('normal', { weights: ['400', '500', '600'], subsets: ['latin'] });
 
-const GOLD = '#F2C14E', SKY = '#5EC8FF', VIOLET = '#C38BFF', INK = '#05070E';
-const HOLO = `linear-gradient(115deg, ${GOLD}, ${SKY} 35%, ${VIOLET} 65%, ${GOLD})`;
+export const GOLD = '#F2C14E', SKY = '#5EC8FF', VIOLET = '#C38BFF', INK = '#05070E';
+export const HOLO = `linear-gradient(115deg, ${GOLD}, ${SKY} 35%, ${VIOLET} 65%, ${GOLD})`;
 
 /** Everything is laid out on a 1920×1080 stage and scaled 2× → crisp 3840×2160 text and vectors. */
 const Stage = ({ children }: { children: ReactNode }) => (
@@ -19,7 +19,7 @@ const Stage = ({ children }: { children: ReactNode }) => (
 );
 
 // ---------- background: drifting light blobs, a slow holographic foil and grain ----------
-const Backdrop = ({ tint = GOLD }: { tint?: string }) => {
+export const Backdrop = ({ tint = GOLD }: { tint?: string }) => {
   const f = useCurrentFrame();
   const blob = (c: string, x: number, y: number, r: number, k: number): CSSProperties => ({
     position: 'absolute', width: r, height: r, borderRadius: '50%', background: c, filter: 'blur(120px)', opacity: 0.42,

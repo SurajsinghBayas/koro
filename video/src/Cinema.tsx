@@ -12,7 +12,7 @@ import { CameraMotionBlur } from '@remotion/motion-blur';
 import { LightLeak } from '@remotion/light-leaks';
 import { noise2D } from '@remotion/noise';
 import { loadFont as loadSerif } from '@remotion/google-fonts/InstrumentSerif';
-import type { CSSProperties, ReactNode } from 'react';
+import { createContext, useContext, type CSSProperties, type ReactNode } from 'react';
 import { AbsoluteFill, Easing, interpolate, OffthreadVideo, random, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 import { BODY, DISPLAY, GOLD, SKY, VIOLET } from './Film';
 
@@ -61,13 +61,16 @@ const Camera = ({ children, rx = 0, ry = 0, rz = 0, x = 0, y = 0, z = 0, fov = 1
 };
 
 /** Place something in the world (centred on its own box). */
+/** Depth of field: devices blur each face separately, so they stay 3D while out of focus. */
+const Defocus = createContext(0);
+const useDefocus = () => { const b = useContext(Defocus); return b > 0.3 ? `blur(${b}px)` : undefined; };
+
 const Obj = ({ children, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, w, h, blur = 0, style }: {
   children: ReactNode; x?: number; y?: number; z?: number; rx?: number; ry?: number; rz?: number; w: number; h: number; blur?: number; style?: CSSProperties;
 }) => (
-  <div style={{ position: 'absolute', width: w, height: h, left: -w / 2, top: -h / 2, transformStyle: blur > 0.3 ? 'flat' : 'preserve-3d',
-    filter: blur > 0.3 ? `blur(${blur}px)` : undefined,
+  <div style={{ position: 'absolute', width: w, height: h, left: -w / 2, top: -h / 2, transformStyle: 'preserve-3d',
     transform: `translate3d(${x}px, ${y}px, ${z}px) rotateZ(${rz}deg) rotateX(${rx}deg) rotateY(${ry}deg)`, ...style }}>
-    {children}
+    <Defocus.Provider value={blur}>{children}</Defocus.Provider>
   </div>
 );
 
@@ -78,13 +81,14 @@ const Phone3D = ({ v, h, children, glint = 0.5, power = 1 }: { v?: Vid; h: numbe
   const sh = h, sw = sh * (PH_W / (PH_H - BAR)), k = sw / PH_W;
   const B = 13, W = sw + B * 2, H = sh + B * 2, D = 26, R = 58;
   const slices = 10;
+  const fx = useDefocus();
   const band = ((f * 1.6) % 260) - 80; // a glint band drifting across the glass
   return (
     <div style={{ width: W, height: H, position: 'relative', transformStyle: 'preserve-3d' }}>
       {/* the frame: titanium slices */}
       {Array.from({ length: slices }, (_, i) => {
         const t = i / (slices - 1);
-        return <div key={i} style={{ position: 'absolute', inset: 0, borderRadius: R, transform: `translateZ(${-D / 2 + t * D}px)`,
+        return <div key={i} style={{ position: 'absolute', inset: 0, borderRadius: R, transform: `translateZ(${-D / 2 + t * D}px)`, filter: fx,
           background: `linear-gradient(${120 + t * 30}deg, #3a4150, #9aa3b5 ${30 + t * 20}%, #2a303b 60%, #c7ccd6 85%, #3a4150)`,
           boxShadow: i === 0 ? '0 50px 120px rgba(0,0,0,.85)' : undefined }} />;
       })}
@@ -92,7 +96,7 @@ const Phone3D = ({ v, h, children, glint = 0.5, power = 1 }: { v?: Vid; h: numbe
       <div style={{ position: 'absolute', inset: 2, borderRadius: R - 2, transform: `translateZ(${-D / 2 - 0.5}px) rotateY(180deg)`,
         background: 'linear-gradient(150deg,#1d2433,#0a0d14 60%,#1a2030)' }} />
       {/* front: black glass with the screen */}
-      <div style={{ position: 'absolute', inset: 0, borderRadius: R, transform: `translateZ(${D / 2 + 0.5}px)`, background: '#05070b', padding: B,
+      <div style={{ position: 'absolute', inset: 0, borderRadius: R, transform: `translateZ(${D / 2 + 0.5}px)`, background: '#05070b', padding: B, filter: fx,
         boxShadow: `inset 0 0 0 2px rgba(255,255,255,.10), 0 0 60px ${GOLD}18` }}>
         <div style={{ width: sw, height: sh, borderRadius: R - B, overflow: 'hidden', position: 'relative', background: '#000' }}>
           {v && <Footage v={v} style={{ position: 'absolute', left: 0, top: -BAR * k, width: sw, height: PH_H * k }} />}
@@ -116,10 +120,11 @@ const phoneSize = (h: number) => {
 const Mac3D = ({ v, w, lean = 12, children, power = 1 }: { v?: Vid; w: number; lean?: number; children?: ReactNode; power?: number }) => {
   const h = w * (MAC_H / MAC_W), bz = w * 0.022, LW = w + bz * 2, LH = h + bz * 2.4, deck = LW * 0.68;
   const k = w / MAC_W;
+  const fx = useDefocus();
   return (
     <div style={{ position: 'absolute', left: 0, top: 0, width: 0, height: 0, transformStyle: 'preserve-3d' }}>
       {/* deck (lies flat, toward the viewer) */}
-      <div style={{ position: 'absolute', left: -LW * 0.52, top: 0, width: LW * 1.04, height: deck, transformOrigin: '50% 0', transform: 'rotateX(90deg)',
+      <div style={{ position: 'absolute', left: -LW * 0.52, top: 0, width: LW * 1.04, height: deck, transformOrigin: '50% 0', transform: 'rotateX(90deg)', filter: fx,
         borderRadius: '6px 6px 30px 30px', background: 'linear-gradient(180deg,#262b35,#3a404c 40%,#1f232b)', boxShadow: '0 0 0 1px rgba(255,255,255,.08)' }}>
         <div style={{ position: 'absolute', left: '7%', right: '7%', top: '6%', height: '48%', borderRadius: 10, background: '#0e1014',
           backgroundImage: 'linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px), linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px)',
@@ -129,9 +134,9 @@ const Mac3D = ({ v, w, lean = 12, children, power = 1 }: { v?: Vid; w: number; l
       </div>
       {/* lid */}
       <div style={{ position: 'absolute', left: -LW / 2, top: -LH, width: LW, height: LH, transformOrigin: '50% 100%', transform: `rotateX(${lean}deg)`, transformStyle: 'preserve-3d' }}>
-        <div style={{ position: 'absolute', inset: 0, borderRadius: '22px 22px 6px 6px', transform: 'translateZ(-3px) rotateY(180deg)',
+        <div style={{ position: 'absolute', inset: 0, borderRadius: '22px 22px 6px 6px', transform: 'translateZ(-3px) rotateY(180deg)', filter: fx,
           background: 'linear-gradient(160deg,#3a404c,#1f232b 60%,#323844)' }} />
-        <div style={{ position: 'absolute', inset: 0, borderRadius: '22px 22px 6px 6px', background: '#07080b', padding: `${bz}px ${bz}px ${bz * 1.4}px`,
+        <div style={{ position: 'absolute', inset: 0, borderRadius: '22px 22px 6px 6px', background: '#07080b', filter: fx, padding: `${bz}px ${bz}px ${bz * 1.4}px`,
           boxShadow: '0 0 0 2px #2b2f37, 0 40px 120px rgba(0,0,0,.7)' }}>
           <div style={{ width: w, height: h, borderRadius: 8, overflow: 'hidden', position: 'relative', background: '#000' }}>
             {v && <Footage v={v} style={{ width: '100%', height: '100%' }} />}
@@ -372,11 +377,11 @@ const Sleep = () => {
   return (
     <AbsoluteFill>
       <Atmos tint={GOLD} tint2={SKY} />
-      <Camera rx={kf(f, [[0, 14], [len, 6]])} ry={kf(f, [[0, -30], [len, -14]])} z={kf(f, [[0, -380], [len, -120]])} shake={4}>
+      <Camera rx={kf(f, [[0, -14], [len, -8]])} ry={kf(f, [[0, -28], [len, -14]])} z={kf(f, [[0, -460], [len, -200]])} y={-60} shake={4}>
         <Obj w={0} h={0} x={-60} y={150} z={-300} blur={focus < 0.5 ? (1 - focus * 2) * 9 : 0}>
-          <Mac3D v={{ name: 's1_sleep.mac', from: 0.5 }} w={980} lean={14} power={macPower} />
+          <Mac3D v={{ name: 's1_sleep.mac', from: 0.5 }} w={860} lean={12} power={macPower} />
         </Obj>
-        <Obj w={P.w} h={P.h} x={260} y={420} z={400} rx={22} ry={-26} rz={6} blur={focus * 10}>
+        <Obj w={P.w} h={P.h} x={270} y={330} z={520} rx={10} ry={-24} rz={6} blur={focus * 10}>
           <Phone3D v={{ name: 's1_sleep.phone', from: 3.2 }} h={860}>
             <Tap x={540} y={904} at={s(0.75)} r={70} /><Tap x={540} y={904} at={s(2.2)} r={70} />
           </Phone3D>
@@ -418,9 +423,9 @@ const WorkB = () => {
   return (
     <AbsoluteFill>
       <Atmos tint={GOLD} tint2={VIOLET} />
-      <Camera rx={kf(f, [[0, 6], [len, 2]])} ry={kf(f, [[0, 26], [len, 12]])} z={kf(f, [[0, -200], [len, 140]])} shake={3}>
-        <Obj w={0} h={0} y={260}>
-          <Mac3D v={{ name: 's2_work.mac', from: 0.9 }} w={1000} lean={10}>
+      <Camera rx={kf(f, [[0, -12], [len, -6]])} ry={kf(f, [[0, 26], [len, 12]])} z={kf(f, [[0, -280], [len, 60]])} shake={3}>
+        <Obj w={0} h={0} y={300}>
+          <Mac3D v={{ name: 's2_work.mac', from: 0.9 }} w={940} lean={10}>
             <div style={{ position: 'absolute', left: 0, right: 0, top: 70, bottom: 0, backdropFilter: 'blur(22px)', background: 'rgba(12,14,20,.35)' }} />
           </Mac3D>
         </Obj>
@@ -453,15 +458,15 @@ const Clip = () => {
   const note = spring({ frame: f - s(1.1), fps, config: { damping: 15 } });
   const focus = kf(f, [[s(0.7), 0], [s(1.1), 1]]); // mac → phone
   // card path: from the Mac screen (back left) to the phone (front right), arcing toward the lens
-  const cx = interpolate(fly, [0, 1], [-170, 200]), cy = interpolate(fly, [0, 0.5, 1], [-330, -520, 80]), cz = interpolate(fly, [0, 0.5, 1], [-300, 520, 390]);
+  const cx = interpolate(fly, [0, 1], [-150, 220]), cy = interpolate(fly, [0, 0.5, 1], [-240, -480, 80]), cz = interpolate(fly, [0, 0.5, 1], [-300, 600, 500]);
   return (
     <AbsoluteFill>
       <Atmos tint={SKY} tint2={VIOLET} />
-      <Camera rx={kf(f, [[0, 10], [len, 4]])} ry={kf(f, [[0, -16], [len, 14]])} z={kf(f, [[0, -320], [len, -160]])} shake={3}>
-        <Obj w={0} h={0} x={-170} y={0} z={-300} blur={focus * 8}>
-          <Mac3D v={{ name: 's3_clip.mac', from: 1.2 }} w={1000} lean={12} />
+      <Camera rx={kf(f, [[0, -12], [len, -6]])} ry={kf(f, [[0, -16], [len, 14]])} z={kf(f, [[0, -400], [len, -240]])} shake={3}>
+        <Obj w={0} h={0} x={-150} y={60} z={-300} blur={focus * 8}>
+          <Mac3D v={{ name: 's3_clip.mac', from: 1.2 }} w={880} lean={12} />
         </Obj>
-        <Obj w={P.w} h={P.h} x={200} y={300} z={300} rx={16} ry={-22} rz={5} blur={(1 - focus) * 9}>
+        <Obj w={P.w} h={P.h} x={220} y={300} z={440} rx={8} ry={-22} rz={5} blur={(1 - focus) * 9}>
           <Phone3D v={{ name: 's6_today.phone', from: 0.2, rate: 0.25 }} h={900}>
             {/* Android's quiet "copied" notification, drawn as the phone shows it */}
             <div style={{ position: 'absolute', left: 30, right: 30, top: BAR + 40, padding: 34, borderRadius: 54, background: 'rgba(28,32,44,.97)', display: 'flex', gap: 30,
@@ -511,8 +516,8 @@ const Build = () => {
       ) : (
         <>
           <Atmos tint={GOLD} tint2={RED} power={1 - dim} />
-          <Camera rx={6} ry={kf(f, [[half, -10], [len, 4]])} z={kf(f, [[half, -140], [len, 260]], Easing.in(Easing.quad))} shake={shake}>
-            <Obj w={0} h={0} y={300}><Mac3D v={{ name: 's4_volbright.mac', from: 4.4, rate: 1.4 }} w={1000} lean={11} power={1 - dim} /></Obj>
+          <Camera rx={-10} ry={kf(f, [[half, -10], [len, 4]])} z={kf(f, [[half, -140], [len, 260]], Easing.in(Easing.quad))} shake={shake}>
+            <Obj w={0} h={0} y={260}><Mac3D v={{ name: 's4_volbright.mac', from: 4.4, rate: 1.4 }} w={940} lean={11} power={1 - dim} /></Obj>
           </Camera>
         </>
       )}
